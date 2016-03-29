@@ -8,6 +8,7 @@ setwd("/Users/mmcmunn/Desktop/Yang_Lab/Insect Temporal Diversity")
 library(ggplot2)
 library(vegan)
 library(reshape)
+
 library(plyr)
 library(treemap)
 library(graphics)
