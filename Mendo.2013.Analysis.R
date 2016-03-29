@@ -13,7 +13,7 @@
   library("plyr")
   library("treemap")
   library("mvabund")
-  # graphic or grid package?
+  # graphic or grid package unavail, problem?
 
 #read in data
   d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
@@ -24,10 +24,10 @@
   error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
         if(length(x) != length(y) | length(y) !=length(lower) | length(lower) != length(upper))
         stop("vectors must be same length")
-        arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)
-        }
+        arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)}
+  
 #define standard error that removes NA's
-  se<-function(x) sqrt(var(x[!is.na(x)])/length(x[!is.na(x)]))
+  se<-function(x) sqrt( var(x[ !is.na(x) ] ) / length(x[ !is.na(x) ] ))
 
 #create new vector for unique families
   d$ord.fam<-paste(d$Order,d$Family,sep=".")
@@ -36,34 +36,31 @@
 #ord.fam<-sort(unique(d$ord.fam))
 #write.csv(ord.fam,file="ord.fam.csv")
 
-
-#all collembolans stripped of family ID for analyses
-d$ord.fam<-ifelse(d$Order=="Collembola","Collembola.",d$ord.fam)
+#all collembolans stripped of family ID for analyses (unreliable ID to family)
+  d$ord.fam <- ifelse(d$Order == "Collembola" , "Collembola." , d$ord.fam)
 
 #match Ord.Fam in data to spreadsheet
-match<-match(d$ord.fam,trophic$ord.fam)
-sort(unique(d$ord.fam))
-###LOOK AT ALL ROWS that fail to match in match
-missing<-d[(which(is.na(match))),]
-
-
-unique(missing$ord.fam)
+  match <- match(d$ord.fam,trophic$ord.fam)
+  sort(unique(d$ord.fam))
+  d[ (which(is.na(match))) , ]
 
 #paste all the trophic position data to each individual collected
-d$trophic.1<-trophic$trophic.position[match]
-d$trophic.2<-trophic$trophic.position.2[match]
-d$trophic.3<-trophic$trophic.position.3[match]
-
+  d$trophic.1 <- trophic$trophic.position[match]
+  d$trophic.2 <- trophic$trophic.position.2[match]
+  d$trophic.3 <- trophic$trophic.position.3[match]
 
 #create new vector for insect volume
-d$volume<-d$Length*(pi*((.5*d$Width)^2))
+  d$volume <- d$Length * ( pi * ( .5 * d$Width )^2)
 
-
+  
+#clean up time variables, change to R time objects
+  d$dateTimeEnd <- strptime(paste("2013" , d$End.Date, d$End.Time, sep = "-"), format = "%Y-%d-%b-%H:%M")
+  clim$dateTimeEnd <- strptime(clim$end.time , format = "%m/%d/%y %H:%M")
+  
 #create a new categorical variable for day/night to bulk samples
 d$end.hour<-gsub(":[0-9][0-9]","\\1",d[,2])
 d$end.hour<-as.numeric(d$end.hour)
 
-head(d)
 #create new column in d where the replication of each collection timeXmethod is counted
 collections<-unique(paste(d$end.hour,d$Malaise.Pit,d$End.Date,sep="."))
 replication.coll<-gsub(".[0-9][0-9]-Jul","\\1",collections)
