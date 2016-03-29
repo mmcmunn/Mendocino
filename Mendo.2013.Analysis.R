@@ -14,7 +14,7 @@
   library("treemap")
   library("mvabund")
   # graphic or grid package?
-head(d)
+
 #read in data
   d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
   clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
