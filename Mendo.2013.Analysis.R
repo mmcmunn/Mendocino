@@ -1,36 +1,36 @@
 #clear all objects from R console
-rm(list=ls())
+  rm(list=ls())
+  graphics.off()
+  pardefault <- par(no.readonly = T)
 
 #set working directory
-setwd("/Users/mmcmunn/Desktop/Yang_Lab/Insect Temporal Diversity")
+  setwd("/Users/mmcmunn/Desktop/GitHub/Mendocino")
 
 #load ggplot2, vegan, and reshape
-library(ggplot2)
-library(vegan)
-library(reshape)
-
-library(plyr)
-library(treemap)
-library(graphics)
-library(grid)
-library(mvabund)
-
+  library("ggplot2")
+  library("vegan")
+  library("reshape")
+  library("plyr")
+  library("treemap")
+  library("mvabund")
+  # graphic or grid package?
+head(d)
 #read in data
-d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
-clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
+  d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
+  clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
+  trophic<-read.csv("all.families11414.csv", header=T,na.strings="")
+  
 #error bar function
-error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
-      if(length(x) != length(y) | length(y) !=length(lower) | length(lower) != length(upper))
-      stop("vectors must be same length")
-      arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)
-      }
-#define standard error for error bars
-se<-function(x) sqrt(var(x[!is.na(x)])/length(x[!is.na(x)]))
-
-trophic<-read.csv("all.families11414.csv", header=T,na.strings="")
+  error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
+        if(length(x) != length(y) | length(y) !=length(lower) | length(lower) != length(upper))
+        stop("vectors must be same length")
+        arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)
+        }
+#define standard error that removes NA's
+  se<-function(x) sqrt(var(x[!is.na(x)])/length(x[!is.na(x)]))
 
 #create new vector for unique families
-d$ord.fam<-paste(d$Order,d$Family,sep=".")
+  d$ord.fam<-paste(d$Order,d$Family,sep=".")
 
 #write unique families to csv
 #ord.fam<-sort(unique(d$ord.fam))
