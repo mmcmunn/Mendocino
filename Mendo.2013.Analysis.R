@@ -56,98 +56,18 @@
 #clean up time variables, change to R time objects
   d$dateTimeEnd <- strptime(paste("2013" , d$End.Date, d$End.Time, sep = "-"), format = "%Y-%d-%b-%H:%M")
   clim$dateTimeEnd <- strptime(clim$end.time , format = "%m/%d/%y %H:%M")
-  
-#create a new categorical variable for day/night to bulk samples
-d$end.hour<-gsub(":[0-9][0-9]","\\1",d[,2])
-d$end.hour<-as.numeric(d$end.hour)
 
-#create new column in d where the replication of each collection timeXmethod is counted
-collections<-unique(paste(d$end.hour,d$Malaise.Pit,d$End.Date,sep="."))
-replication.coll<-gsub(".[0-9][0-9]-Jul","\\1",collections)
-replication.coll<-tapply(replication.coll,replication.coll,length)
-replication.coll<-cbind(rownames(replication.coll),as.numeric(replication.coll))
-d$time.method<-gsub(".[0-9][0-9]-Jul","\\1",paste(d$end.hour,d$Malaise.Pit,d$End.Date,sep="."))
-match<-match(d$time.method,replication.coll[,1])
-d$rep.coll<-as.numeric(replication.coll[match,2])
-
-#make a time vector in d
-d$sample.time<-paste(d$end.hour,d$End.Date,sep=".")
-t1<-strptime(d$sample.time,format="%H.%d-%b")
-t1$year<-t1$year-1
-d$time<-t1
-
-#make time vector in clim object
-t2<-strptime(clim[,1],format="%m/%d/%y %H:%M")
-clim$end.time<-t2
 ###################
 #working with the trophic position assignments to coerce trophic position (1,2,3) matrix into single column with series of if...then statements
 
 #convert to characters, rather than factors, which R turns into factor-levels
-d$trophic.1<-as.character(d$trophic.1)
-d$trophic.2<-as.character(d$trophic.2)
-d$trophic.3<-as.character(d$trophic.3)
+  d$trophic.1 <- as.character(d$trophic.1)
+  d$trophic.2 <- as.character(d$trophic.2)
+  d$trophic.3 <- as.character(d$trophic.3)
 
 #assign all single trophic position families to that trophic position
-d$trophic.assign<-NA
-d$trophic.assign[which(d$trophic.1=="Predator",is.na(d$trophic.2) & is.na(d$trophic.3))]<-"Predator"
-d$trophic.assign[which(d$trophic.1=="Herbivore",is.na(d$trophic.2) & is.na(d$trophic.3))]<-"Herbivore"
-d$trophic.assign[which(d$trophic.1=="Detritivore",is.na(d$trophic.2) & is.na(d$trophic.3))]<-"Detritivore"
-d$trophic.assign[which(d$trophic.1=="Unknown",is.na(d$trophic.2) & is.na(d$trophic.3))]<-"Unknown"
-d$trophic.assign[which(d$trophic.1=="Parasite",is.na(d$trophic.2) & is.na(d$trophic.3))]<-"Parasite"
-d$trophic.assign[which(d$trophic.1=="Parasitoid",is.na(d$trophic.2) & is.na(d$trophic.3))]<-"Parasitoid"
-
-#assign primary "Non-Feeders" to Non-Feeding group, regardless of trophic.2 and trophic.3
-d$trophic.assign[d$trophic.1=="Non-Feeding"]<-"Non-Feeding"
-
-
-#assign anything with a parasite trophic position and additional trophic levels to "Parasite/Omnivore"
-#is the insect a parasite?
-
-parasite.temp<-ifelse(d$trophic.1=="Parasite" | d$trophic.2=="Parasite"| d$trophic.3=="Parasite", 1,NA)
-
-#is the insect a herbivore?
-herbivore.temp<-ifelse(d$trophic.1=="Herbivore" | d$trophic.2=="Herbivore"| d$trophic.3=="Herbivore", 1,NA)
-
-#is the insect a detritivore?
-detritivore.temp<-ifelse(d$trophic.1=="Detritivore" | d$trophic.2=="Detritivore"| d$trophic.3=="Detritivore", 1,NA)
-
-#is the insect a predator?
-predator.temp<-ifelse(d$trophic.1=="Predator" | d$trophic.2=="Predator"| d$trophic.3=="Predator", 1,NA)
-
-#is the insect a parasitoid
-parasitoid.temp<-ifelse(d$trophic.1=="Parasitoid" | d$trophic.2=="Parasitoid"| d$trophic.3=="Parasitoid", 1,NA)
-
-#if it is a parasite and anything else -> parasite/omnivore
-par.omni.1<-ifelse(parasite.temp==1 & herbivore.temp==1,"Parasite/Omnivore",NA)
-par.omni.2<-ifelse(parasite.temp==1 & predator.temp==1,"Parasite/Omnivore",NA)
-par.omni.3<-ifelse(parasite.temp==1 & detritivore.temp==1,"Parasite/Omnivore",NA)
-parasite.omni<-ifelse(par.omni.1=="Parasite/Omnivore" | par.omni.2=="Parasite/Omnivore"| par.omni.3=="Parasite/Omnivore" , "Parasite/Omnivore",NA)
-d$trophic.assign[parasite.omni=="Parasite/Omnivore"]<-"Parasite/Omnivore"
-
-#assign anything without parasite trophic position, but with herbivory and either detritivore or predator "Omnivore"
-#the "not parasites"
-n.parasite.temp<-ifelse(d$trophic.1!="Parasite", 1,NA)
-#reuse from above "yes herbivores"
-#herbivore.temp
-#the "yes predators"
-#predator.temp
-#the "yes detritivores"
-#detritivore.temp
-
-potential.omnis<-ifelse(n.parasite.temp==1 & herbivore.temp==1,1,NA)
-
-#omnivores eat plants and something else
-omni.1<-ifelse(potential.omnis==1 & predator.temp==1,"Omnivore",NA)
-omni.2<-ifelse(potential.omnis==1 & detritivore.temp==1,"Omnivore",NA)
-omnivores<-ifelse(omni.1=="Omnivore" | omni.2=="Omnivore" , "Omnivore",NA)
-
-d$trophic.assign[omnivores=="Omnivore"]<-"Omnivore"
-
-#to print a list of unique families and their trophic assignments
-trophic.list<-d[which(!duplicated(d$ord.fam)),]
-trophic.list<-trophic.list[,c(14:17,24)]
-trophic.list<-trophic.list[order(trophic.list$ord.fam),]
-write.csv(trophic.list,file="trophic.assign.csv")
+d$trophic.assign <- ifelse(is.na(d$trophic.2) & is.na(d$trophic.3) , d$trophic.1, d$trophic.assign)
+table(d$ord.fam)
 
 ##############################################
 #make community matrices
