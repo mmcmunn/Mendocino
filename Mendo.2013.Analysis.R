@@ -18,7 +18,7 @@
 #read in data
   d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
   clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
-  trophic<-read.csv("all.families11414.csv", header=T,na.strings="")
+  trophic<-read.csv("trophic.family.assign.csv", header=T,na.strings="")
   
 #error bar function
   error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
@@ -39,16 +39,7 @@
 #all collembolans stripped of family ID for analyses (unreliable ID to family)
   d$ord.fam <- ifelse(d$Order == "Collembola" , "Collembola." , d$ord.fam)
 
-#match Ord.Fam in data to spreadsheet
-  match <- match(d$ord.fam,trophic$ord.fam)
-  sort(unique(d$ord.fam))
-  d[ (which(is.na(match))) , ]
-
-#paste all the trophic position data to each individual collected
-  d$trophic.1 <- trophic$trophic.position[match]
-  d$trophic.2 <- trophic$trophic.position.2[match]
-  d$trophic.3 <- trophic$trophic.position.3[match]
-
+  
 #create new vector for insect volume
   d$volume <- d$Length * ( pi * ( .5 * d$Width )^2)
 
@@ -56,72 +47,43 @@
 #clean up time variables, change to R time objects
   d$dateTimeEnd <- strptime(paste("2013" , d$End.Date, d$End.Time, sep = "-"), format = "%Y-%d-%b-%H:%M")
   clim$dateTimeEnd <- strptime(clim$end.time , format = "%m/%d/%y %H:%M")
-
-###################
-#working with the trophic position assignments to coerce trophic position (1,2,3) matrix into single column with series of if...then statements
-
+  
+#trophic assignments
 #convert to characters, rather than factors, which R turns into factor-levels
-  d$trophic.1 <- as.character(d$trophic.1)
-  d$trophic.2 <- as.character(d$trophic.2)
-  d$trophic.3 <- as.character(d$trophic.3)
+  #do any ord.fams fail to match?
+  d[ (which(is.na(match(d$ord.fam,trophic$ord.fam)))) , ]  
+  
+  trophic$trophic.assign  <- with(trophic,  ifelse(is.na(trophic.assign), as.character(trophic.position), as.character(trophic.assign) ))
 
-#assign all single trophic position families to that trophic position
-d$trophic.assign <- ifelse(is.na(d$trophic.2) & is.na(d$trophic.3) , d$trophic.1, d$trophic.assign)
-table(d$ord.fam)
+  d$trophic.assign <- trophic$trophic.assign[match(d$ord.fam,trophic$ord.fam)]
 
-##############################################
+#sampleID
+    d$sampleID <- with (d, paste(Malaise.Pit ,as.numeric(as.factor(as.character(d$dateTimeEnd))), sep = ""))
+    d$timeChar <- as.character(d$dateTimeEnd)
+        ##############################################
 #make community matrices
 #average # of arthropods in each sample
-mean(tapply(d$Order,d$sample.time,length))
-
+  mean(table(d$sampleID))
 #abundance within samples by family
-comm.by.fam<-table(d$sample.time,d$ord.fam)
+  abund.FxS <- table(d$timeChar, d$ord.fam)
 
 #abundance within samples by trophic position
-comm.by.tro<-table(d$sample.time,d$trophic.assign)
+  abund.TxS <-table(d$timeChar,d$trophic.assign)
 
 #biomass within samples by family
-by.vol <- aggregate(volume ~ ord.fam + sample.time, data=d, FUN=sum)
-vol.by.fam <- cast(by.vol,sample.time ~ ord.fam,value="volume")
-vol.by.fam[is.na(vol.by.fam)] <- 0
-rownames(vol.by.fam) <- vol.by.fam[ , 1]
-vol.by.fam <- vol.by.fam[,-1]
-rows <- rownames(vol.by.fam)
-cols <- colnames(vol.by.fam)
-?as.matrix
-vol.by.fam <- as.matrix(vol.by.fam)
-rownames(vol.by.fam) <- rows
-colnames(vol.by.fam) <- cols
-class(vol.by.fam)
+  vol.FxS <- with(d, tapply(volume, list(ord.fam, timeChar), sum))
+  vol.FxS[is.na(vol.FxS)] <- 0
 
 #biomass within samples by trophic position
-by.vol<-aggregate(volume ~ trophic.assign + sample.time, data=d, FUN=sum)
-vol.by.tro<-cast(by.vol,sample.time~trophic.assign,value="volume")
-vol.by.tro[is.na(vol.by.tro)]<-0
-rownames(vol.by.tro)<-vol.by.tro[,1]
-vol.by.tro <-vol.by.tro[,-1]
-rows<-rownames(vol.by.tro)
-cols<-colnames(vol.by.tro)
-vol.by.fam<-as.matrix(vol.by.tro)
-rownames(vol.by.fam)<-rows
-colnames(vol.by.fam)<-cols
-
-
-#define a matrix with sample covariates
-sample.info<-cbind(rownames(comm.by.fam),c(rep(10,5),rep(14,5),rep(18,5),rep(2,5),rep(22,5),rep(6,5)))
-t2<-clim$end.time
-clim$end.time.match<-paste(t2$hour,".",t2$mday,"-","Jul",sep="")
-ordered.clim<-clim[match(sample.info[,1],clim$end.time.match),]
-sample.info<-cbind(sample.info,ordered.clim)
-
+  vol.TxS <- with(d, tapply(volume, list(trophic.assign, timeChar), sum))
+  vol.TxS[is.na(vol.TxS)] <- 0
 
 ###############################
 #abundance based analyses
 ###############################
 #multivariate abundance models using mvabund package
 #####by family
-time.of.day <- as.factor(sample.info[,2])
-m.time <- manyglm(comm.by.fam ~ time.of.day, family = "negative.binomial")
+m.time <- manyglm(abund.FxS ~ clim$end.time, family = "negative.binomial")
 m.time.sig <- anova(m.time, p.uni = "adjusted")
 m.time.sig
 #time of day is significant (.001) as a factor determining community composition
