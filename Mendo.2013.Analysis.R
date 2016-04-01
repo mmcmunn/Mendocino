@@ -60,10 +60,17 @@
 #sampleID
     d$sampleID <- with (d, paste(Malaise.Pit ,as.numeric(as.factor(as.character(d$dateTimeEnd))), sep = ""))
     d$timeChar <- as.character(d$dateTimeEnd)
+
+#summary statistics, tables        
+    #average # of arthropods in each sample
+    mean(table(d$sampleID))
+    
+    #which taxa were most abundant
+    head(sort(table(d$ord.fam), decreasing = TRUE) , 20)    
+    
         ##############################################
 #make community matrices
-#average # of arthropods in each sample
-  mean(table(d$sampleID))
+    
 #abundance within samples by family
   abund.FxS <- table(d$timeChar, d$ord.fam)
 
@@ -82,114 +89,92 @@
 #abundance based analyses
 ###############################
 #multivariate abundance models using mvabund package
-#####by family
-m.time <- manyglm(abund.FxS ~ clim$end.time, family = "negative.binomial")
-m.time.sig <- anova(m.time, p.uni = "adjusted")
-m.time.sig
-#time of day is significant (.001) as a factor determining community composition
 
+#by family, abundance
+  mAbund <- manyglm(abund.FxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
+  mAbund.sig <- anova(mAbund, p.uni = "adjusted")
+  
+#time of day is significant (.001) as a factor determining community composition
 #check residuals vs fitted
-plot(m.time)
+  plot.manyglm(mAbund)
 #check mean variance relationship
-meanvar.plot(comm.by.fam[,] ~ time.of.day)
+meanvar.plot(abund.FxS[,] ~ as.factor(clim$dateTimeEnd$hour))
 
 #how many taxa varied in abundance significantly by time of day
-sum(m.time.sig$uni.p[2,]<=.05)
-which(m.time.sig$uni.p[2,]<=.05)
-
-#which taxa were most abundant
-sort(colSums(comm.by.fam),decreasing=TRUE)[1:15]
+sum(mAbund.sig$uni.p[2,]<=.05)
+which(mAbund.sig$uni.p[2,]<=.05)
 #some notable taxa that were abundant, but did not vary by time of day - ants, cecidomyiids
 
 #a closer look at taxa driving changes over the course of the day
 #get top 15 likelihood statistics
-
-top.fifteen.uni <- names(sort(-m.time$two.loglike, decreasing=TRUE)[1:15])
-top.fifteen.lik <- sort(-m.time$two.loglike, decreasing=TRUE)[1:15]
+top.fifteen.uni <- names(sort(-mAbund$two.loglike, decreasing=TRUE)[1:15])
+top.fifteen.lik <- sort(-mAbund$two.loglike, decreasing=TRUE)[1:15]
 top.fifteen.values <- top.fifteen.uni
 
 
-d$sample.type.time <- paste(d$time.method,d$End.Date,sep=".")
+#by trophic, abundance
+  mTroph <- manyglm(abund.TxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
+  mTroph.sig <- anova(mTroph, p.uni = "adjusted")
 
+#time of day is significant (.001) as a factor determining community composition
+#check residuals vs fitted
+plot.manyglm(mTroph)
+#check mean variance relationship
+meanvar.plot(abund.TxS[,] ~ as.factor(clim$dateTimeEnd$hour))
 
-temp.counts <- with(d, aggregate(Malaise.Pit, by=list(ord.fam,sample.type.time, end.hour),length))
-relev.counts <- temp.counts[which(!is.na(match(temp.counts$Group.1 , top.fifteen.uni))) , ]
-means.to.plot <- with(relev.counts, aggregate(x , by=list(Group.1,Group.3), mean))
-colnames(means.to.plot) <- c("ord.fam", "end.hour", "mean.abund")
-means.to.plot<-means.to.plot [order(match(means.to.plot$ord.fam, top.fifteen.uni)),]
-to.plot <- cbind( top.fifteen.lik[match(means.to.plot$ord.fam, top.fifteen.uni)] , means.to.plot)
-
-plot(to.plot[,1], to.plot[,4], pch=16, xlab="likelihood statistic", ylab="mean abundance")
-
-
-#####by trophic
-m.time.tro <- manyglm(comm.by.tro ~ time.of.day, family = "negative.binomial")
-m.time.tro.sig <- anova(m.time.tro, p.uni = "adjusted")
-
-#how many trophic levels varied in abundance significantly by time of day
-sum(m.time.tro.sig$uni.p[2,]<=.05)
-which(m.time.tro.sig$uni.p[2,]<=.05)
+#how many taxa varied in abundance significantly by time of day
+sum(mTroph.sig$uni.p[2,]<=.05)
+which(mTroph.sig$uni.p[2,]<=.05)
 
 ########################################
 #plot NMDS of community family matrix with Malaise and Pitfall bulked
 set.seed(1231231)
-ord.all= metaMDS(comm=as.matrix(comm.by.fam),distance="bray")
+ord.all= metaMDS(comm=as.matrix(abund.FxS),distance="bray")
+xy.coord <- as.data.frame(scores(ord.all))
+cols <- c(rep(c( "purple", "black",  "gray50", "red", "yellow", "green"), 5))
 
-cols<-c(rep("red",5),rep("yellow",5),rep("green",5),rep("black",5),rep("purple",5),rep("gray50",5))
-
-xy.coord<-scores(ord.all)
-rownames(xy.coord)
-hours <- as.numeric(unlist(lapply(strsplit(rownames(xy.coord),split="\\."), function(x) x[1])))
-days <- as.factor(unlist(lapply(strsplit(rownames(xy.coord),split="\\."), function(x) x[2])))
-type <- ifelse(hours==22|hours==10, "crepuscular", ifelse(hours==2|hours==6, "night", "day"))
-
-xy.ordering <- data.frame(hours = as.numeric(hours),days = as.numeric(days),type)
-xy.coord <- xy.coord[order(xy.ordering[,2],xy.ordering[,1] ) , ]
-cols <- cols[order(xy.ordering[,2],xy.ordering[,1] )]
-
-typeOrder <- xy.ordering[order(xy.ordering[,2],xy.ordering[,1] ),"type"]
 
 
 #for gif
-setwd("/Users/mmcmunn/Desktop/Yang_Lab/Insect Temporal Diversity/ordination animation")
-name<-paste("ord.plot",31,"png",sep=".")
-png(name, width = 600, height = 600)
-par(oma = c(0,1,0,0))
-plot(x=xy.coord[,1], y=xy.coord[,2],col=cols,pch=16,cex=2.5,cex.lab=1.5,cex.axis=1.5,
-     xlim = c(min(xy.coord[,1])+min(xy.coord[,1]*.3) , max(xy.coord[,1]+max(xy.coord[,1]*.3))),
-     ylim = c(min(xy.coord[,2])+min(xy.coord[,2]*.3) , max(xy.coord[,2]+max(xy.coord[,2]*.4))),
-     xlab = "NMDS 1", ylab = "NMDS 2"
-)
-legend("topright",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
-
-crep.points <- xy.coord[which(typeOrder=="crepuscular"),]
-crep.bound <- crep.points[chull(crep.points),]
-polygon(crep.bound)
-text(mean(crep.points[,1]), mean(crep.points[,2])-.5, "crepuscular", cex = 1.5)
-
-
-day.points <- xy.coord[which(typeOrder=="day"),]
-day.bound <- day.points[chull(day.points),]
-polygon(day.bound)
-text(mean(day.points[,1]), mean(day.points[,2])-.5, "diurnal", cex = 1.5)
-
-
-night.points <- xy.coord[which(typeOrder=="night"),]
-night.bound <- night.points[chull(night.points),]
-polygon(night.bound)
-text(mean(night.points[,1]), mean(night.points[,2]-.4), "nocturnal", cex = 1.5)
-dev.off()
+setwd("animations")
+    #frame 31, with convex hulls around crepuscular, diurnal, nocturnal
+    name<-paste("ord.plot",31,"png",sep=".")
+    png(name, width = 600, height = 600)
+    par(oma = c(0,1,0,0))
+    plot(x=xy.coord[,1], y=xy.coord[,2],col=cols,pch=16,cex=2.5,cex.lab=1.5,cex.axis=1.5,
+         xlim = c(min(xy.coord[,1])*1.3 , max(xy.coord[,1])*1.3),
+         ylim = c(min(xy.coord[,2])*1.3 , max(xy.coord[,2])*1.4),
+         xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time")
+      legend("topleft",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),
+             pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
+        
+    xy.coord$hour <- strptime(rownames(xy.coord), format = "%Y-%m-%d %H:%M:%S")$hour
+            
+    
+        #outer hulls
+          crep.points <- xy.coord[which(xy.coord$hour==22 | xy.coord$hour==10),]
+          polygon(crep.points[chull(crep.points),])
+          text(mean(crep.points[,1]), mean(crep.points[,2])-.5, "crepuscular", cex = 1.5)
+          
+          day.points <- xy.coord[which(xy.coord$hour==14 | xy.coord$hour==18),]
+          polygon(day.points[chull(day.points),])
+          text(mean(day.points[,1]), mean(day.points[,2])-.5, "diurnal", cex = 1.5)
+          
+          night.points <- xy.coord[which(xy.coord$hour==2 | xy.coord$hour==6),]
+          polygon(night.points[chull(night.points),])
+          text(mean(night.points[,1]), mean(night.points[,2])-.5, "night", cex = 1.5)
+      dev.off()
 
 for(i in 1:30){
 	name<-paste("ord.plot",i,"png",sep=".")
 	png(name, width = 600, height = 600)
-	plot(xy.coord,type="n",col=cols,pch=16,cex=1.5,cex.lab=1.5,cex.axis=1.5,
-	xlim = c(min(xy.coord[,1])+min(xy.coord[,1]*.3) , max(xy.coord[,1]+max(xy.coord[,1]*.3))),
-	ylim = c(min(xy.coord[,2])+min(xy.coord[,2]*.3) , max(xy.coord[,2]+max(xy.coord[,2]*.3))),
-	xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time"
-	)
+  	plot(xy.coord[ , c("NMDS1", "NMDS2")],type="n",col=cols,pch=16,cex=1.5,cex.lab=1.5,cex.axis=1.5,
+  	xlim =c(min(xy.coord[,1])*1.3 , max(xy.coord[,1])*1.3),
+  	ylim = c(min(xy.coord[,2])*1.3 , max(xy.coord[,2])*1.4),
+  	xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time"
+  	)
 points(x=xy.coord[1:i,1], y=xy.coord[1:i,2],col=cols[1:i],pch=16,cex=2.5) 
-legend("topright",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
+legend("topleft",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
 
 for (h in 1:i ){
 	segments(x0 = xy.coord[ifelse(h >1, h-1, h) , 1 ], y0= xy.coord[ifelse(h >1, h-1, h) , 2], x1 = xy.coord[h, 1], y1 = xy.coord[h, 2]   )	
@@ -197,14 +182,12 @@ for (h in 1:i ){
 arrows(x0 = xy.coord[ifelse(i >1, i-1, i) , 1 ], y0= xy.coord[ifelse(i >1, i-1, i) , 2], x1 = xy.coord[i, 1], y1 = xy.coord[i, 2]   , lwd=6 )
 dev.off()
 }
+setwd("..")
 
-
-setwd("/Users/mmcmunn/Desktop/Yang_Lab/Insect Temporal Diversity")
-
-
+#HERE
 
 #PERMANOVA for time of day, second for abiotic variables
-adonis(comm.by.fam ~ as.factor(sample.info[,2]))
+adonis(abund.FxS ~ as.factor(sample.info[,2]))
 
 sample.info<-cbind(rownames(comm.by.tro),c(rep(10,5),rep(14,5),rep(18,5),rep(2,5),rep(22,5),rep(6,5)))
 
@@ -240,12 +223,7 @@ hours <- as.numeric(unlist(lapply(strsplit(rownames(xy.coord),split="\\."), func
 days <- as.factor(unlist(lapply(strsplit(rownames(xy.coord),split="\\."), function(x) x[2])))
 type <- ifelse(hours==22|hours==10, "crepuscular", ifelse(hours==2|hours==6, "night", "day"))
 
-xy.ordering <- data.frame(hours = as.numeric(hours),days = as.numeric(days),type)
-xy.coord <- xy.coord[order(xy.ordering[,2],xy.ordering[,1] ) , ]
 cols<-c(rep("red",5),rep("yellow",5),rep("green",5),rep("black",5),rep("purple",5),rep("gray50",5))
-cols <- cols[order(xy.ordering[,2],xy.ordering[,1] )]
-
-typeOrder <- xy.ordering[order(xy.ordering[,2],xy.ordering[,1] ),"type"]
 
 
 #for gif
