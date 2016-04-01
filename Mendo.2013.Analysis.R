@@ -1,319 +1,215 @@
-#clear all objects from R console
-  rm(list=ls())
-  graphics.off()
-  pardefault <- par(no.readonly = T)
-
-#set working directory
-  setwd("/Users/mmcmunn/Desktop/GitHub/Mendocino")
-
-#load ggplot2, vegan, and reshape
-  library("ggplot2")
-  library("vegan")
-  library("reshape")
-  library("plyr")
-  library("treemap")
-  library("mvabund")
-  # graphic or grid package unavail, problem?
-
-#read in data
-  d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
-  clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
-  trophic<-read.csv("trophic.family.assign.csv", header=T,na.strings="")
-  
-#error bar function
-  error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
-        if(length(x) != length(y) | length(y) !=length(lower) | length(lower) != length(upper))
-        stop("vectors must be same length")
-        arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)}
-  
-#define standard error that removes NA's
-  se<-function(x) sqrt( var(x[ !is.na(x) ] ) / length(x[ !is.na(x) ] ))
-
-#create new vector for unique families
-  d$ord.fam<-paste(d$Order,d$Family,sep=".")
-
-#write unique families to csv
-#ord.fam<-sort(unique(d$ord.fam))
-#write.csv(ord.fam,file="ord.fam.csv")
-
-#all collembolans stripped of family ID for analyses (unreliable ID to family)
-  d$ord.fam <- ifelse(d$Order == "Collembola" , "Collembola." , d$ord.fam)
-
-  
-#create new vector for insect volume
-  d$volume <- d$Length * ( pi * ( .5 * d$Width )^2)
-
-  
-#clean up time variables, change to R time objects
-  d$dateTimeEnd <- strptime(paste("2013" , d$End.Date, d$End.Time, sep = "-"), format = "%Y-%d-%b-%H:%M")
-  clim$dateTimeEnd <- strptime(clim$end.time , format = "%m/%d/%y %H:%M")
-  
-#trophic assignments
-#convert to characters, rather than factors, which R turns into factor-levels
-  #do any ord.fams fail to match?
-  d[ (which(is.na(match(d$ord.fam,trophic$ord.fam)))) , ]  
-  
-  trophic$trophic.assign  <- with(trophic,  ifelse(is.na(trophic.assign), as.character(trophic.position), as.character(trophic.assign) ))
-
-  d$trophic.assign <- trophic$trophic.assign[match(d$ord.fam,trophic$ord.fam)]
-
-#sampleID
-    d$sampleID <- with (d, paste(Malaise.Pit ,as.numeric(as.factor(as.character(d$dateTimeEnd))), sep = ""))
-    d$timeChar <- as.character(d$dateTimeEnd)
+#setup
+        #clear all objects from R console
+          rm(list=ls())
+          graphics.off()
+          pardefault <- par(no.readonly = T)
+        
+        #set working directory
+          setwd("/Users/mmcmunn/Desktop/GitHub/Mendocino")
+        
+        #load packages
+          library("ggplot2")
+          library("vegan")
+          library("reshape")
+          library("plyr")
+          library("treemap")
+          library("mvabund")
+          # graphic or grid package unavail, problem?
+        
+        #read in data
+          d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
+          clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
+          trophic<-read.csv("trophic.family.assign.csv", header=T,na.strings="")
+          
+        #error bar function
+          error.bar <- function(x, y, upper, lower=upper, length=0.1,...){
+                if(length(x) != length(y) | length(y) !=length(lower) | length(lower) != length(upper))
+                stop("vectors must be same length")
+                arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)}
+          
+        #define standard error that removes NA's
+          se<-function(x) sqrt( var(x[ !is.na(x) ] ) / length(x[ !is.na(x) ] ))
+          
+#data cleaning
+        #create new vector for unique families
+          d$ord.fam<-paste(d$Order,d$Family,sep=".")
+        
+        #all collembolans stripped of family ID for analyses (unreliable ID to family)
+          d$ord.fam <- ifelse(d$Order == "Collembola" , "Collembola." , d$ord.fam)
+        
+        #create new vector for insect volume
+          d$volume <- d$Length * ( pi * ( .5 * d$Width )^2)
+        
+        #clean up time variables, change to R time objects
+          d$dateTimeEnd <- strptime(paste("2013" , d$End.Date, d$End.Time, sep = "-"), format = "%Y-%d-%b-%H:%M")
+          clim$dateTimeEnd <- strptime(clim$end.time , format = "%m/%d/%y %H:%M")
+          
+        #trophic assignments
+        #convert to characters, rather than factors, which R turns into factor-levels
+          #do any ord.fams fail to match?
+          d[ (which(is.na(match(d$ord.fam,trophic$ord.fam)))) , ]  
+          
+          trophic$trophic.assign  <- with(trophic,  ifelse(is.na(trophic.assign), as.character(trophic.position), as.character(trophic.assign) ))
+        
+          d$trophic.assign <- trophic$trophic.assign[match(d$ord.fam,trophic$ord.fam)]
+        
+        #sampleID
+            d$sampleID <- with (d, paste(Malaise.Pit ,as.numeric(as.factor(as.character(d$dateTimeEnd))), sep = ""))
+            d$timeChar <- as.character(d$dateTimeEnd)
 
 #summary statistics, tables        
-    #average # of arthropods in each sample
-    mean(table(d$sampleID))
-    
-    #which taxa were most abundant
-    head(sort(table(d$ord.fam), decreasing = TRUE) , 20)    
-    
-        ##############################################
-#make community matrices
-    
-#abundance within samples by family
-  abund.FxS <- table(d$timeChar, d$ord.fam)
-
-#abundance within samples by trophic position
-  abund.TxS <-table(d$timeChar,d$trophic.assign)
-
-#biomass within samples by family
-  vol.FxS <- with(d, tapply(volume, list(ord.fam, timeChar), sum))
-  vol.FxS[is.na(vol.FxS)] <- 0
-
-#biomass within samples by trophic position
-  vol.TxS <- with(d, tapply(volume, list(trophic.assign, timeChar), sum))
-  vol.TxS[is.na(vol.TxS)] <- 0
-
-###############################
-#abundance based analyses
-###############################
-#multivariate abundance models using mvabund package
-
-#by family, abundance
-  mAbund <- manyglm(abund.FxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
-  mAbund.sig <- anova(mAbund, p.uni = "adjusted")
-  
-#time of day is significant (.001) as a factor determining community composition
-#check residuals vs fitted
-  plot.manyglm(mAbund)
-#check mean variance relationship
-meanvar.plot(abund.FxS[,] ~ as.factor(clim$dateTimeEnd$hour))
-
-#how many taxa varied in abundance significantly by time of day
-sum(mAbund.sig$uni.p[2,]<=.05)
-which(mAbund.sig$uni.p[2,]<=.05)
-#some notable taxa that were abundant, but did not vary by time of day - ants, cecidomyiids
-
-#a closer look at taxa driving changes over the course of the day
-#get top 15 likelihood statistics
-top.fifteen.uni <- names(sort(-mAbund$two.loglike, decreasing=TRUE)[1:15])
-top.fifteen.lik <- sort(-mAbund$two.loglike, decreasing=TRUE)[1:15]
-top.fifteen.values <- top.fifteen.uni
-
-
-#by trophic, abundance
-  mTroph <- manyglm(abund.TxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
-  mTroph.sig <- anova(mTroph, p.uni = "adjusted")
-
-#time of day is significant (.001) as a factor determining community composition
-#check residuals vs fitted
-plot.manyglm(mTroph)
-#check mean variance relationship
-meanvar.plot(abund.TxS[,] ~ as.factor(clim$dateTimeEnd$hour))
-
-#how many taxa varied in abundance significantly by time of day
-sum(mTroph.sig$uni.p[2,]<=.05)
-which(mTroph.sig$uni.p[2,]<=.05)
-
-########################################
-#plot NMDS of community family matrix with Malaise and Pitfall bulked
-set.seed(1231231)
-ord.all= metaMDS(comm=as.matrix(abund.FxS),distance="bray")
-xy.coord <- as.data.frame(scores(ord.all))
-cols <- c(rep(c( "purple", "black",  "gray50", "red", "yellow", "green"), 5))
-
-
-
-#for gif
-setwd("animations")
-    #frame 31, with convex hulls around crepuscular, diurnal, nocturnal
-    name<-paste("ord.plot",31,"png",sep=".")
-    png(name, width = 600, height = 600)
-    par(oma = c(0,1,0,0))
-    plot(x=xy.coord[,1], y=xy.coord[,2],col=cols,pch=16,cex=2.5,cex.lab=1.5,cex.axis=1.5,
-         xlim = c(min(xy.coord[,1])*1.3 , max(xy.coord[,1])*1.3),
-         ylim = c(min(xy.coord[,2])*1.3 , max(xy.coord[,2])*1.4),
-         xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time")
-      legend("topleft",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),
-             pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
+        #average # of arthropods in each sample
+             mean(table(d$sampleID))
         
-    xy.coord$hour <- strptime(rownames(xy.coord), format = "%Y-%m-%d %H:%M:%S")$hour
+        #which taxa were most abundant
+            head(sort(table(d$ord.fam), decreasing = TRUE) , 20)    
+    
+#make community matrices
+        #subsets by malaise and pitfall
+          dM <- d[d$Malaise.Pit=="M" , ]
+          dP <- d[d$Malaise.Pit=="P" , ]
+    
+        #abundance within samples by family
+          abund.FxS <- as.data.frame.matrix(table(d$timeChar, d$ord.fam))
+          M.abund.FxS <- as.data.frame.matrix(table(dM[ ,"timeChar"], dM[, "ord.fam"]))
+          P.abund.FxS <- as.data.frame.matrix(table(dP[ ,"timeChar"], dP[, "ord.fam"]))
+          
+        #abundance within samples by trophic position
+          abund.TxS <-as.data.frame.matrix(table(d$timeChar,d$trophic.assign))
+          M.abund.TxS <-as.data.frame.matrix(table(dM$timeChar,dM$trophic.assign))
+          P.abund.TxS <-as.data.frame.matrix(table(dP$timeChar,dP$trophic.assign))
+          
+        #biomass within samples by family
+          vol.FxS <- as.data.frame.matrix(t(with(d, tapply(volume, list(ord.fam, timeChar), sum))))
+          vol.FxS[is.na(vol.FxS)] <- 0
+        
+        #biomass within samples by trophic position
+          vol.TxS <- as.data.frame.matrix(t(with(d, tapply(volume, list(trophic.assign, timeChar), sum))))
+          vol.TxS[is.na(vol.TxS)] <- 0
+
+
+#multivariate abundance models using mvabund package
+#describe which families and trophic positions vary by time of day
+          #by family, abundance
+                    mAbund <- manyglm(abund.FxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
+                    mAbund.sig <- anova(mAbund, p.uni = "adjusted")
+                    
+                  #time of day is significant (.001) as a factor determining community composition
+                  #check residuals vs fitted
+                    plot.manyglm(mAbund)
+                  #check mean variance relationship
+                    meanvar.plot(abund.FxS[,] ~ as.factor(clim$dateTimeEnd$hour))
+                  
+                  #how many taxa varied in abundance significantly by time of day
+                    sum(mAbund.sig$uni.p[2,]<=.05)
+                    which(mAbund.sig$uni.p[2,]<=.05)
+                  #some notable taxa that were abundant, but did not vary by time of day - ants, cecidomyiids
+                  
+                  #a closer look at taxa driving changes over the course of the day
+                  #get top 15 likelihood statistics
+                    top.fifteen.uni <- names(sort(-mAbund$two.loglike, decreasing=TRUE)[1:15])
+                    top.fifteen.lik <- sort(-mAbund$two.loglike, decreasing=TRUE)[1:15]
+                    top.fifteen.values <- top.fifteen.uni
+          
+          
+          #by trophic, abundance
+                    mTroph <- manyglm(abund.TxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
+                    mTroph.sig <- anova(mTroph, p.uni = "adjusted")
+                  
+                  #time of day is significant (.001) as a factor determining community composition
+                  #check residuals vs fitted
+                    plot.manyglm(mTroph)
+                  #check mean variance relationship
+                    meanvar.plot(abund.TxS[,] ~ as.factor(clim$dateTimeEnd$hour))
+                  
+                  #how many taxa varied in abundance significantly by time of day
+                    sum(mTroph.sig$uni.p[2,]<=.05)
+                    which(mTroph.sig$uni.p[2,]<=.05)
+
+#a function to animate each samnple in a NMDS plot
+ordination.animation <- function(comm.matrix, file.ext){
+              
+                set.seed(1231231)
+                ord.all= metaMDS(comm=as.matrix(comm.matrix),distance="bray")
+                xy.coord <- as.data.frame(scores(ord.all))
+                xy.coord$hour <- strptime(rownames(xy.coord), format = "%Y-%m-%d %H:%M:%S")$hour
+                cols <- c(rep(c( "purple", "black",  "gray50", "red", "yellow", "green"), 5))
             
+            #for gif
+                    setwd("animations")
+                            #frame 31, with convex hulls around crepuscular, diurnal, nocturnal
+                            name<-paste("ord.plot",file.ext,31,"png",sep=".")
+                            png(name, width = 600, height = 600)
+                            par(oma = c(1,1,0,0))
+                            plot(x=xy.coord[,1], y=xy.coord[,2],col=cols,pch=16,cex=2.5,cex.lab=1.5,cex.axis=1.5,
+                                 xlim = c(min(xy.coord[,1])*1.3 , max(xy.coord[,1])*1.3),
+                                 ylim = c(min(xy.coord[,2])*1.3 , max(xy.coord[,2])*1.5),
+                                 xlab = "NMDS 1", ylab = "NMDS 2", main = paste(file.ext, " by collection time", sep = ""))
+                              legend("topleft",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),
+                                     pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
+                          
+                            #outer hulls
+                              crep.points <- xy.coord[which(xy.coord$hour==22 | xy.coord$hour==10),]
+                              polygon(crep.points[chull(crep.points),])
+                              text(mean(crep.points[,1]), mean(crep.points[,2])-.5, "crepuscular", cex = 1.5)
+                              
+                              day.points <- xy.coord[which(xy.coord$hour==14 | xy.coord$hour==18),]
+                              polygon(day.points[chull(day.points),])
+                              text(mean(day.points[,1]), mean(day.points[,2])-.5, "diurnal", cex = 1.5)
+                              
+                              night.points <- xy.coord[which(xy.coord$hour==2 | xy.coord$hour==6),]
+                              polygon(night.points[chull(night.points),])
+                              text(mean(night.points[,1]), mean(night.points[,2])-.5, "night", cex = 1.5)
+                          dev.off()
+                    #sample level loop to produce figues
+                    for(i in 1:30){
+                    	name<-paste("ord.plot",file.ext,i,"png",sep=".")
+                          	png(name, width = 600, height = 600)
+                          	par(oma = c(1,1,0,0))
+                            	plot(xy.coord[ , c("NMDS1", "NMDS2")],type="n",col=cols,pch=16,cex=1.5,cex.lab=1.5,cex.axis=1.5,
+                            	xlim =c(min(xy.coord[,1])*1.3 , max(xy.coord[,1])*1.3),
+                            	ylim = c(min(xy.coord[,2])*1.3 , max(xy.coord[,2])*1.5),
+                            	xlab = "NMDS 1", ylab = "NMDS 2", main = paste(file.ext, " by collection time", sep = "")
+                            	)
+                          points(x=xy.coord[1:i,1], y=xy.coord[1:i,2],col=cols[1:i],pch=16,cex=2.5) 
+                          legend("topleft",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
+                              
+                              #consecutive data points loop to plot all lines between previous samples   
+                                  for (h in 1:i ){
+                                  	segments(x0 = xy.coord[ifelse(h >1, h-1, h) , 1 ], y0= xy.coord[ifelse(h >1, h-1, h) , 2], x1 = xy.coord[h, 1], y1 = xy.coord[h, 2]   )	
+                                  }
+                                  arrows(x0 = xy.coord[ifelse(i >1, i-1, i) , 1 ], y0= xy.coord[ifelse(i >1, i-1, i) , 2], x1 = xy.coord[i, 1], y1 = xy.coord[i, 2]   , lwd=6 )
+                                  dev.off()
+                                  }
+                                  setwd("..") }
+            
+#apply the NMDS animation function
+      #family level abundance, malaise and pitfall bulked, then separatly
+          ordination.animation(comm.matrix = abund.FxS, file.ext = "Family abundance")
+          ordination.animation(comm.matrix = P.abund.FxS, file.ext = "Pitfall family abundance")
+          ordination.animation(comm.matrix = M.abund.FxS, file.ext = "Malaise family abundance")
+      
+      #trophic abundance, malaise and pitfall bulked, then separatly
+          ordination.animation(comm.matrix = abund.TxS, file.ext = "Trophic abundance")
+          ordination.animation(comm.matrix = P.abund.TxS, file.ext = "Pitfall trophic abundance")
+          ordination.animation(comm.matrix = M.abund.TxS, file.ext = "Malaise trophic abundance")
+      
+      #by volume, family and trophic level
+          ordination.animation(comm.matrix = vol.FxS, file.ext = "Family volume")
+          ordination.animation(comm.matrix = vol.FxS, file.ext = "Trophic volume")
+
+
+#PERMANOVA for family abundance by time of day, second for abiotic variables
+    adonis(abund.FxS ~ as.factor(clim$dateTimeEnd$hour))
+    adonis(abund.FxS ~ clim$light.sun + clim$mean.T + clim$wind.max)
     
-        #outer hulls
-          crep.points <- xy.coord[which(xy.coord$hour==22 | xy.coord$hour==10),]
-          polygon(crep.points[chull(crep.points),])
-          text(mean(crep.points[,1]), mean(crep.points[,2])-.5, "crepuscular", cex = 1.5)
-          
-          day.points <- xy.coord[which(xy.coord$hour==14 | xy.coord$hour==18),]
-          polygon(day.points[chull(day.points),])
-          text(mean(day.points[,1]), mean(day.points[,2])-.5, "diurnal", cex = 1.5)
-          
-          night.points <- xy.coord[which(xy.coord$hour==2 | xy.coord$hour==6),]
-          polygon(night.points[chull(night.points),])
-          text(mean(night.points[,1]), mean(night.points[,2])-.5, "night", cex = 1.5)
-      dev.off()
-
-for(i in 1:30){
-	name<-paste("ord.plot",i,"png",sep=".")
-	png(name, width = 600, height = 600)
-  	plot(xy.coord[ , c("NMDS1", "NMDS2")],type="n",col=cols,pch=16,cex=1.5,cex.lab=1.5,cex.axis=1.5,
-  	xlim =c(min(xy.coord[,1])*1.3 , max(xy.coord[,1])*1.3),
-  	ylim = c(min(xy.coord[,2])*1.3 , max(xy.coord[,2])*1.4),
-  	xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time"
-  	)
-points(x=xy.coord[1:i,1], y=xy.coord[1:i,2],col=cols[1:i],pch=16,cex=2.5) 
-legend("topleft",legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"),cex=1.5)
-
-for (h in 1:i ){
-	segments(x0 = xy.coord[ifelse(h >1, h-1, h) , 1 ], y0= xy.coord[ifelse(h >1, h-1, h) , 2], x1 = xy.coord[h, 1], y1 = xy.coord[h, 2]   )	
-}
-arrows(x0 = xy.coord[ifelse(i >1, i-1, i) , 1 ], y0= xy.coord[ifelse(i >1, i-1, i) , 2], x1 = xy.coord[i, 1], y1 = xy.coord[i, 2]   , lwd=6 )
-dev.off()
-}
-setwd("..")
-
+#PERMANOVA for trophic abundance by time of day, second for abiotic variables
+    adonis(abund.TxS ~ as.factor(clim$dateTimeEnd$hour))
+    adonis(abund.TxS ~ clim$light.sun + clim$mean.T + clim$wind.max)
+  
+    
 #HERE
-
-#PERMANOVA for time of day, second for abiotic variables
-adonis(abund.FxS ~ as.factor(sample.info[,2]))
-
-sample.info<-cbind(rownames(comm.by.tro),c(rep(10,5),rep(14,5),rep(18,5),rep(2,5),rep(22,5),rep(6,5)))
-
-adonis(comm.by.fam ~ sample.info$light.shade+sample.info$mean.T+sample.info$wind.max)
-
-
-#plot NMDS of community trophic matrix with Malaise and Pitfall bulked
-ord.all= metaMDS(comm=comm.by.tro)
-plot(ord.all,type="t",display="sites")
-points(ord.all,col=cols,pch=1,cex=4,lwd=2)
-adonis(comm.by.tro ~ as.factor(sample.info[,2]))
-legend(.3,.6,legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"))
-mtext("mendocino insect trophic position by time of day",3,line=1,cex=1.5)
-
-#repeat NMDS with Malaise and Pitfall separate
-comm.by.fam.type<-table(d$sample.time, d$ord.fam,d$Malaise.Pit)
-
-pitfall <- comm.by.fam.type[,,"P"]
-malaise <- comm.by.fam.type[,,"M"]
-
-rownames(pitfall) <- paste(rownames(pitfall), "P", sep = ".")
-rownames(malaise) <- paste(rownames(malaise), "M", sep = ".")
-comm.by.fam.type <- rbind(pitfall, malaise)
-
-set.seed(1231231)
-ord.all= metaMDS(comm=comm.by.fam.type)
-
-xy.coord<-scores(ord.all)
-#pitfall are columns 1 and 2. malaise are columns 3 and 4
-xy.coord <- cbind(xy.coord[1:30,], xy.coord[31:60,])
-
-hours <- as.numeric(unlist(lapply(strsplit(rownames(xy.coord),split="\\."), function(x) x[1])))
-days <- as.factor(unlist(lapply(strsplit(rownames(xy.coord),split="\\."), function(x) x[2])))
-type <- ifelse(hours==22|hours==10, "crepuscular", ifelse(hours==2|hours==6, "night", "day"))
-
-cols<-c(rep("red",5),rep("yellow",5),rep("green",5),rep("black",5),rep("purple",5),rep("gray50",5))
-
-
-#for gif
-setwd("/Users/mmcmunn/Desktop/Yang_Lab/Insect Temporal Diversity/ordination animation 2")
-name<-paste("ord.plot",31,"png",sep=".")
-png(name, width = 600, height = 600)
-plot(x=c(xy.coord[,1],xy.coord[,3]), y=c(xy.coord[,2],xy.coord[,4]),
-     col=cols,cex=2.5,cex.lab=1.5,cex.axis=1.5, pch = c(replicate(30, 16), replicate(30, 17)),
-     xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time and trap type")
-
-legend("bottomleft",ncol = 3,legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm", "Pitfall", "Malaise"),
-       pch=c(rep(16,6), 16, 17),col=c("black","gray50","red","yellow","green","purple", "black", "black"),cex=1)
-dev.off()
-for(i in 1:30){
-  name<-paste("ord.plot",i,"png",sep=".")
-  png(name, width = 600, height = 600)
-  plot(x=c(xy.coord[,1],xy.coord[,3]), y=c(xy.coord[,2],xy.coord[,4]),type = "n",
-       col=cols,cex=2.5,cex.lab=1.5,cex.axis=1.5, pch = c(replicate(30, 16), replicate(30, 17)),
-       xlab = "NMDS 1", ylab = "NMDS 2", main = "Family-level abundance by collection time and trap type")
-  
-  legend("bottomleft",ncol = 3,legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm", "Pitfall", "Malaise"),
-         pch=c(rep(16,6), 16, 17),col=c("black","gray50","red","yellow","green","purple", "black", "black"),cex=1)
-  
-  
-  points(x=xy.coord[1:i,1], y=xy.coord[1:i,2],col=cols[1:i],pch=16,cex=2.5)  
-  points(x=xy.coord[1:i,3], y=xy.coord[1:i,4],col=cols[1:i],pch=17,cex=2.5)   
-  
-  for (h in 1:i ){
-    segments(x0 = xy.coord[ifelse(h >1, h-1, h) , 1 ], y0= xy.coord[ifelse(h >1, h-1, h) , 2], x1 = xy.coord[h, 1], y1 = xy.coord[h, 2]   )	
-    segments(x0 = xy.coord[ifelse(h >1, h-1, h) , 3 ], y0= xy.coord[ifelse(h >1, h-1, h) , 4], x1 = xy.coord[h, 3], y1 = xy.coord[h, 4]   )  
     
-    
-  }
-  arrows(x0 = xy.coord[ifelse(i >1, i-1, i) , 1 ], y0= xy.coord[ifelse(i >1, i-1, i) , 2], x1 = xy.coord[i, 1], y1 = xy.coord[i, 2]   , lwd=6 )
-  arrows(x0 = xy.coord[ifelse(i >1, i-1, i) , 3 ], y0= xy.coord[ifelse(i >1, i-1, i) , 4], x1 = xy.coord[i, 3], y1 = xy.coord[i, 4]   , lwd=6 )
-  
-  dev.off()
-}
-
-
-setwd("/Users/mmcmunn/Desktop/Yang_Lab/Insect Temporal Diversity")
-
-
-
-
-
-
-
-
-
-
-
-plot(ord.all,type="t",display="sites")
-cols<-c(rep("red",5),rep("yellow",5),rep("green",5),rep("black",5),rep("purple",5),rep("gray50",5))
-points(ord.all,col=c(cols),pch=1,cex=3,lwd=2)
-legend(-1.05,.95,legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"))
-mtext("mendocino insect families by time of day - MP",3,line=1,cex=1.5)
-
-
-
-
-################################
-#biomass based analysis
-################################
-#plot NMDS of community family matrix with Malaise and Pitfall bulked
-
-ord.all= metaMDS(comm=vol.by.fam,distance="bray")
-
-plot(ord.all,type="t",display="sites")
-cols<-c(rep("red",5),rep("yellow",5),rep("green",5),rep("black",5),rep("purple",5),rep("gray50",5))
-points(ord.all,col=cols,pch=1,cex=3,lwd=2)
-legend(.4,-.4,legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"))
-mtext("mendocino insect family biomass by time of day",3,line=1,cex=1.5)
-
-#PERMANOVA for time of day, second for abiotic variables
-adonis(vol.by.fam ~ as.factor(sample.info[,2]))
-adonis(vol.by.fam ~ sample.info$light.shade+sample.info$mean.T+sample.info$wind.max)
-vol.by.fam[1:31,1]
-
-#plot NMDS of community trophic matrix with Malaise and Pitfall bulked
-sample.info<-cbind(rownames(comm.by.tro),c(rep(10,5),rep(14,5),rep(18,5),rep(2,5),rep(22,5),rep(6,5)))
-ord.all= metaMDS(comm=comm.by.tro)
-plot(ord.all,type="t",display="sites")
-points(ord.all,col=cols,pch=1,cex=4,lwd=2)
-adonis(comm.by.tro ~ as.factor(sample.info[,2]))
-legend(.3,-.3,legend=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),pch=rep(16,6),col=c("black","gray50","red","yellow","green","purple"))
-mtext("mendocino insect trophic position biomass by time of day",3,line=1,cex=1.5)
-
-
-
 ############################
 #sum of squares within family
 #############################
