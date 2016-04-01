@@ -14,8 +14,7 @@
           library("plyr")
           library("treemap")
           library("mvabund")
-          # graphic or grid package unavail, problem?
-        
+
         #read in data
           d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
           clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
@@ -159,7 +158,7 @@ ordination.animation <- function(comm.matrix, file.ext){
                               
                               night.points <- xy.coord[which(xy.coord$hour==2 | xy.coord$hour==6),]
                               polygon(night.points[chull(night.points),])
-                              text(mean(night.points[,1]), mean(night.points[,2])-.5, "night", cex = 1.5)
+                              text(mean(night.points[,1]), mean(night.points[,2])-.5, "nocturnal", cex = 1.5)
                           dev.off()
                     #sample level loop to produce figues
                     for(i in 1:30){
@@ -208,59 +207,25 @@ ordination.animation <- function(comm.matrix, file.ext){
     adonis(abund.TxS ~ clim$light.sun + clim$mean.T + clim$wind.max)
   
     
-#HERE
-    
-############################
-#sum of squares within family
-#############################
-#cut out families collected in one sample
-comm.by.fam.multiples<-comm.by.fam[,which(colSums(comm.by.fam>0)>1)]
+#plot average body length by order
+      #mean within orders
+      length.means<-tapply(X=d$Length,INDEX=d$Order,FUN=mean,na.rm=T)
+      length.means
+      
+      #se within orders
+      length.ses<-tapply(X=d$Length,INDEX=d$Order,FUN=se)
+      length.ses
+      
+      length.summary<-cbind(length.means,length.ses)
+      
+      #to order by size
+      length.to.plot<-length.summary[order(-length.summary[,1]),]
+      labels<-rownames(length.to.plot)
+      #the plot
+      predplot <- barplot(height=length.to.plot[,1], names.arg= c(rownames(length.to.plot)) ,las=2,main="body length by Order" ,ylim = c(0,20),col="grey",xaxt="n",ylab="body length (mm)")
+      error.bar(predplot,length.to.plot[,1],length.to.plot[,2])
+      text(cex=.8,x=predplot,y=-1.75,labels,xpd=T,srt=90)
 
-#standardize abundance in each column
-comm.by.fam.multiples.st <- sapply(1:ncol(comm.by.fam.multiples), function(x) (comm.by.fam.multiples[,x]-mean(comm.by.fam.multiples[,x]))/
-sd(comm.by.fam.multiples[,x]))
-
-
-#vector of times for each sample	
-times<-as.factor(unlist(lapply(strsplit(rownames(comm.by.fam.multiples),split="\\."), function(x) x[1])))
-
-#empty lists for loop
-sum.of.sq.fam <-list()
-f.stat.fam <- list()
-
-#loop over each family, pull out sum.sq and f-statistic
-for(i in 1:ncol(comm.by.fam.multiples.st)){
-	
-temp <- cbind(comm.by.fam.multiples.st[,i],times)
-
-f.stat.fam[i] <- summary(aov(temp[,1]~temp[,2]))[[1]][,4][1]
-sum.of.sq.fam[i] <- summary(aov(temp[,1]~temp[,2]))[[1]][,2][1]
-}
-
-#look at loop output
-hist(unlist(f.stat.fam))
-hist(unlist(sum.of.sq.fam))
-cbind(colnames(comm.by.fam.multiples), sum.of.sq.fam)
-
-#############################################
-#mean within orders
-length.means<-tapply(X=d$Length,INDEX=d$Order,FUN=mean,na.rm=T)
-length.means
-
-#se within orders
-length.ses<-tapply(X=d$Length,INDEX=d$Order,FUN=se)
-length.ses
-
-length.summary<-cbind(length.means,length.ses)
-
-
-#to order by size
-length.to.plot<-length.summary[order(-length.summary[,1]),]
-labels<-rownames(length.to.plot)
-#the plot
-predplot <- barplot(height=length.to.plot[,1], names.arg= c(rownames(length.to.plot)) ,las=2,main="body length by Order" ,ylim = c(0,20),col="grey",xaxt="n",ylab="body length (mm)")
-error.bar(predplot,length.to.plot[,1],length.to.plot[,2])
-text(cex=.8,x=predplot,y=-1.75,labels,xpd=T,srt=90)
 
 #calculate sizes within each order and time block
 sizes<-aggregate(x=d$Length,by=list(d$Order,d$end.hour),FUN=mean)
