@@ -27,7 +27,7 @@
                 arrows(x,y+upper, x, y-lower, angle=90, code=3, length=length, ...)}
           
         #define standard error that removes NA's
-          se<-function(x) sqrt( var(x[ !is.na(x) ] ) / length(x[ !is.na(x) ] ))
+          se <- function(x) sqrt( var(x[ !is.na(x) ] ) / length(x[ !is.na(x) ] ))
           
 #data cleaning
         #create new vector for unique families
@@ -90,7 +90,7 @@
 #multivariate abundance models using mvabund package
 #describe which families and trophic positions vary by time of day
           #by family, abundance
-                    mAbund <- manyglm(abund.FxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
+                    mAbund <- manyglm(as.matrix(abund.FxS) ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
                     mAbund.sig <- anova(mAbund, p.uni = "adjusted")
                     
                   #time of day is significant (.001) as a factor determining community composition
@@ -112,7 +112,7 @@
           
           
           #by trophic, abundance
-                    mTroph <- manyglm(abund.TxS ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
+                    mTroph <- manyglm(as.matrix(abund.TxS) ~ as.factor(clim$dateTimeEnd$hour), family = "negative.binomial")
                     mTroph.sig <- anova(mTroph, p.uni = "adjusted")
                   
                   #time of day is significant (.001) as a factor determining community composition
@@ -205,106 +205,69 @@ ordination.animation <- function(comm.matrix, file.ext){
 #PERMANOVA for trophic abundance by time of day, second for abiotic variables
     adonis(abund.TxS ~ as.factor(clim$dateTimeEnd$hour))
     adonis(abund.TxS ~ clim$light.sun + clim$mean.T + clim$wind.max)
-  
+    
+    
+    
     
 #plot average body length by order
-      #mean within orders
-      length.means<-tapply(X=d$Length,INDEX=d$Order,FUN=mean,na.rm=T)
-      length.means
+      #mean and se within orders
+      lenOrd <- data.frame (mean = with(d, tapply(Length, Order, mean)),se= with(d, tapply(Length, Order, se)))
+      lenOrd <- lenOrd[order(lenOrd$mean, decreasing=TRUE) , ]
+      lenOrd$order <- factor(rownames(lenOrd), levels = rownames(lenOrd)) 
       
-      #se within orders
-      length.ses<-tapply(X=d$Length,INDEX=d$Order,FUN=se)
-      length.ses
+      p1 <- ggplot(lenOrd)+aes(x= order, y = mean) + geom_bar(stat = "identity") 
+      p1 <-  p1+ geom_errorbar(aes(ymin = mean-se, ymax=mean+se), width = 0.2)+theme(axis.text.x = element_text(angle = 45, vjust= 1,hjust=1))
+      p1 <- p1 + theme(axis.text=element_text(size=14,face="bold")) + labs(y = "mean body length (mm)", x = "Order")
+      p1 <- p1+ theme(axis.title = element_text(size=18,face="bold")) + scale_y_continuous( expand = c(0, 0), limits = c(0,20)) 
+      p1
       
-      length.summary<-cbind(length.means,length.ses)
-      
-      #to order by size
-      length.to.plot<-length.summary[order(-length.summary[,1]),]
-      labels<-rownames(length.to.plot)
-      #the plot
-      predplot <- barplot(height=length.to.plot[,1], names.arg= c(rownames(length.to.plot)) ,las=2,main="body length by Order" ,ylim = c(0,20),col="grey",xaxt="n",ylab="body length (mm)")
-      error.bar(predplot,length.to.plot[,1],length.to.plot[,2])
-      text(cex=.8,x=predplot,y=-1.75,labels,xpd=T,srt=90)
-
-
-#calculate sizes within each order and time block
-sizes<-aggregate(x=d$Length,by=list(d$Order,d$end.hour),FUN=mean)
-sizes
-#se within order and family
-size.se<-aggregate(d$Length,list(d$Order,d$end.hour),se)
-size.se
-
-#total sample sizes to check for suspiciously low # samples
-aggregate(x=d$Length,by=list(d$End.Date,d$time.method),FUN=length)
-
-#abundances of insects in each of these catagories
-abund.temp<-aggregate(d$Length,list(d$Order,d$end.hour,d$End.Date),FUN=length)
-abund.mean<-aggregate(abund.temp[,4],list(abund.temp[,1],abund.temp[,2]),FUN=mean)
-abund.se<-aggregate(abund.temp[,4],list(abund.temp[,1],abund.temp[,2]),FUN=se)
-
-abundances
-#volumes
-volumes<-aggregate(x=d$volume,by=list(d$Order,d$end.hour),FUN=mean)
-volume.se<-aggregate(x=d$volume,by=list(d$Order,d$end.hour),FUN=se)
-
-#paste together
-summary.table<-cbind(sizes,size.se[,3],abund.mean[,3],volumes[,3],volume.se[,3],abund.se[,3])
-summary.table
-
-#the data look right, rename columns
-colnames(summary.table)<-c("order","end.hour","mean.length","se.length","abundance","volume","volume.se","abund.se")
-summary.table
+#calculate mean and se of mean sizes, volumes, and sample sizes within each order and time block
+      summary.table <- with (d, aggregate(x = cbind(Length, volume),
+                                  by = list(Order = Order, endTime = End.Time), 
+                                  FUN= function(x) {c(mean = mean(x, na.rm = TRUE), se = se(x), n = length(x))}
+                                  ))
 
 #reorder by order then by time
-summary.table<-summary.table[order(summary.table[,1],as.numeric(summary.table[,2])),]
+      summary.table <- summary.table[ order( summary.table[,"Order"] , summary.table[ , "endTime"] ) , ]
 
+  #body length   
+        #open an empty d matrix of plots of BODY LENGTH
+            par(mfrow=c(5,4))
+          
+        #using a loop, fill in each of the 17 plots
+        
+        for(i in unique(d$Order) ) {
+              summT <- summary.table[summary.table$Order == i , ]
+        
+              predplot <- barplot(height = summT[,"Length"][,"mean"], names.arg= summT[,"endTime"], ylim = c(0,max(summT[,"Length"][,"mean"])),col="grey"
+                            , ylab="mean len (mm)" , xlab="collection end time (hours)" , main= i )
+              error.bar(predplot , summT[ , "Length"][ , "mean" ] , summT[ , "Length"][,"se"], length = .05)	
+        }
+  #body volume
+        #open an empty 4x4 matrix of plots of BODY VOLUME
+        par(mfrow=c(5,4))
+        
+        #using a loop, fill in each of the 17 plots
+        for(i in unique(d$Order) ) {
+          summT <- summary.table[summary.table$Order == i , ]
+          
+          predplot <- barplot(height = summT[,"volume"][,"mean"], names.arg= summT[,"endTime"], ylim = c(0 , max(summT[,"volume"][,"mean"])) , col="grey"
+                              , ylab = "mean vol (mm^3)" , xlab = "collection end time (hours)" , main = i )
+          error.bar(predplot , summT[ , "volume"][ , "mean" ] , summT[ , "volume"][,"se"], length = .05)	
+        }
 
-#we want only orders that occur in multiple time steps for comparison of size
-#counts of windows of occurence
-sum.occur<-tapply(X=summary.table$end.hour,INDEX=summary.table$order,FUN=length)
-sum.occur<-subset(sum.occur,sum.occur>1)
-length(sum.occur)
-ord.names<-rownames(sum.occur)
-
-#open an empty 4x4 matrix of plots of BODY LENGTH
-par(mfrow=c(4,4))
-
-#using a loop, fill in each of the 16 plots
-for(i in 1:length(sum.occur)){
-d.temp<-subset(summary.table,summary.table[,1]==ord.names[i])
-
-predplot <- barplot(height=d.temp[,3], names.arg= d.temp[,2], ylim = c(0,28),col="grey",ylab="mean length (mm)",xlab="collection end time (hours)",main=ord.names[i])
-error.bar(predplot,d.temp[,3],d.temp[,4])	
-		
-}
-summary.table
-
-#open an empty 4x4 matrix of plots of BODY VOLUME
-par(mfrow=c(4,4))
-
-#using a loop, fill in each of the 12 plots
-for(i in 1:length(sum.occur)){
-d.temp<-subset(summary.table,summary.table[,1]==ord.names[i])
-predplot <- barplot(height=d.temp[,6], names.arg= d.temp[,2],col="grey",ylim=c(0,(max(d.temp[,6])*1.5)),ylab="mean volume (mm^3)",xlab="collection end time (hours)",main=ord.names[i])
-error.bar(predplot,d.temp[,6],d.temp[,7])	
-		
-}
-
-
-
-summary.table
-
-#open an empty 3x4 matrix of plots of ABUNDANCE
-par(mfrow=c(4,4))
-
-#using a loop, fill in each of the 12 plots
-for(i in 1:length(sum.occur)){
-d.temp<-subset(summary.table,summary.table[,1]==ord.names[i])
-predplot <- barplot(height=d.temp[,5], names.arg= d.temp[,2],col="grey",ylab="mean abundance",xlab="collection end time (hours)",main=ord.names[i])
-error.bar(predplot,d.temp[,5],d.temp[,8])	
-
-}
-
+  #abundance
+        #open an empty 4x4 matrix of plots of BODY VOLUME
+        par(mfrow=c(5,4))
+        
+        #using a loop, fill in each of the 17 plots
+        for(i in unique(d$Order) ) {
+          summT <- summary.table[summary.table$Order == i , ]
+          
+          barplot(height = summT[,"Length"][,"n"], names.arg= summT[,"endTime"], ylim = c(0 , max(summT[,"Length"][,"n"])) , col="grey"
+                              , ylab = "n individuals" , xlab = "collection end time (hours)" , main = i )
+        }
+        
 
 
 #redo same graphs splitting by day, night, and crepuscular
