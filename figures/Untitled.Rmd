@@ -1,0 +1,10 @@
+---
+title: "Mendocino tables"
+author: "Marshall McMunn"
+date: "August 19, 2016"
+output: pdf_document
+---
+
+```{r}
+1
+```

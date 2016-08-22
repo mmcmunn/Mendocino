@@ -8,13 +8,18 @@
           setwd("/Users/mmcmunn/Desktop/GitHub/Mendocino")
         
         #load packages
+          library("codyn")
           library("ggplot2")
           library("vegan")
           library("reshape")
           library("plyr")
           library("treemap")
           library("mvabund")
-
+          library("gridExtra")
+          library("tidyr")
+          
+          cbbPalette <- c("#009E73", "#e79f00", "#9ad0f3", "#0072B2", "#D55E00", 
+                          "#CC79A7", "#F0E442")
         #read in data
           d<-read.csv("Mendo.July.2013.Night.Day.family.11414.csv", header=T)
           clim<-read.csv("mendocino.climate.var.all.summ.csv",header=T)
@@ -55,7 +60,19 @@
         #sampleID
             d$sampleID <- with (d, paste(Malaise.Pit ,as.numeric(as.factor(as.character(d$dateTimeEnd))), sep = ""))
             d$timeChar <- as.character(d$dateTimeEnd)
-
+            
+        #create a categorical variable for day, night, crepuscular
+            
+            d$comm.type<-ifelse(d$End.Time=="10:00"|d$End.Time=="22:00","crepuscular",NA)
+            d$comm.type<-ifelse(d$End.Time=="14:00"|d$End.Time=="18:00","day",d$comm.type)
+            d$comm.type<-ifelse(d$End.Time=="2:00"|d$End.Time=="6:00","night",d$comm.type)
+            d$comm.type<-as.factor(d$comm.type)
+            combinations  <- as.data.frame( xtabs(~ Order + End.Time + comm.type, d))[ , c("Order" , "End.Time", "comm.type")]
+            dExpand <- merge(combinations , d, all.x = TRUE)   
+            
+        #make End.Time and ordered factor so it behaves in plots  
+            d <- within(d,  End.Time <- factor(End.Time, levels=c("2:00", "6:00", "10:00", "14:00" , "18:00" , "22:00") ))
+            
 #summary statistics, tables        
         #average # of arthropods in each sample
              mean(table(d$sampleID))
@@ -63,6 +80,164 @@
         #which taxa were most abundant
             head(sort(table(d$ord.fam), decreasing = TRUE) , 20)    
     
+            
+            
+########## FIGURE 2 ##############
+### Temporal diversity indices ###
+#when are more families active?
+
+#table of number of families per sampling time, standard error
+divTime <-  with( with(d ,  aggregate(x = ord.fam, by = list(ord.fam = ord.fam,End.Time = End.Time), FUN = length )) ,
+                  aggregate( x , list(End.Time) , function(x){c(length = length(x) , se = se(x)) }))
+#plot diversity by time  
+p1 <- ggplot(divTime , aes(x = Group.1 , y = x[,"length"]), group = 1) + labs(x = "Time", y = "Average family diversity") 
+p1 + geom_errorbar(aes(ymin=x[,"length"]-x[,"se"], ymax=x[,"length"]+x[,"se"] , position= Group.1), width=.1) + geom_point()
+
+### Panel B: turnover ###
+head(d)
+sampleCounts <-  count(d , c("ord.fam" , "dateTimeEnd"))
+sampleCounts$timeNum <- as.numeric(sampleCounts$dateTimeEnd)
+mendoTurnover <- turnover(df = sampleCounts,  
+                         time.var = "timeNum",  
+                         species.var = "ord.fam", 
+                         abundance.var = "freq",
+                         metric = "total")
+
+
+mendoAppear <- turnover(df = sampleCounts,  
+                                            time.var = "timeNum",  
+                                            species.var = "ord.fam", 
+                                            abundance.var = "freq",
+                                            metric = "appearance")
+
+mendoDisappear <- turnover(df = sampleCounts,  
+                           time.var = "timeNum",  
+                           species.var = "ord.fam", 
+                           abundance.var = "freq",
+                           metric = "disappearance")
+
+mendoTurnover$time <- as.POSIXct(mendoTurnover$timeNum, origin="1970-01-01")
+reps <- rep(1:6, 5)
+reps <- reps[-length(reps)]
+mendoTurnover$group <- reps
+mendoTurnover$appear <- mendoAppear[,1]
+mendoTurnover$disappear <- mendoDisappear[,1]
+
+
+means<- with(mendoTurnover, tapply(total, group, mean))
+ses<-with(mendoTurnover, tapply(total, group, se))
+plot(means, xaxt = "n" , ylim = c(0,1), type = "b", xlab = "time community transition", ylab = "proportion family turnover", pch = 16)
+arrows(x0 = 1:6, y0 = means - ses, y1 = means + ses, angle = 90, code = 3)
+
+means<- with(mendoTurnover, tapply(appear, group, mean))
+ses<-with(mendoTurnover, tapply(appear, group, se))
+points(means, type = "b", col = "blue", pch = 16)
+arrows(x0 = 1:6, y0 = means - ses, y1 = means + ses, angle = 90, code = 3, col = "blue")
+
+means<- with(mendoTurnover, tapply(disappear, group, mean))
+ses<-with(mendoTurnover, tapply(disappear, group, se))
+points(means, type = "b", col = "red", pch = 16)
+arrows(x0 = 1:6, y0 = means - ses, y1 = means + ses, angle = 90, code = 3, col = "red")
+
+axis(1, labels = c("22->2","2->6","6->10", "10->14", "14->18", "18->22"), at = 1:6)
+legend("topright", legend = c("total", "appearances", "disappearances"), col = c("black", "blue", "red"), pch = 16, lwd = 1)
+?legend
+
+summary(aov(mendoTurnover$total~mendoTurnover$group))
+summary(aov(mendoTurnover$disappear~mendoTurnover$group))
+summary(aov(mendoTurnover$appear~mendoTurnover$group))
+
+
+
+plot(mendoTurnover[,1], type = "b", ylim = c(0,1))
+lines(mendoAppear[,1] , col = "blue")
+lines(mendoDisappear[,1] , col = "red")
+
+#Format a compiled data frame
+KNZ_turnover$metric<-"total"
+names(KNZ_turnover)[1]="turnover"
+
+KNZ_appearance$metric<-"appearance"
+names(KNZ_appearance)[1]="turnover"
+
+KNZ_disappearance$metric<-"disappearance"
+names(KNZ_disappearance)[1]="turnover"
+
+KNZ_allturnover<-rbind(KNZ_turnover, KNZ_appearance, KNZ_disappearance)
+
+#Create the graph
+turn.graph <- ggplot(KNZ_allturnover, aes(x=year, y=turnover, color=metric)) + 
+  geom_line(size = 1) + 
+  facet_wrap(~replicate) + 
+  theme_bw() + 
+  theme(legend.position="bottom")
+
+### Panel C: mean rank shifts ###
+
+#Run the rank shift code
+KNZ_rankshift <- rank_shift(df=collins08, 
+                            time.var = "year", 
+                            species.var = "species",
+                            abundance.var = "abundance", 
+                            replicate.var = "replicate")
+
+#Select the final time point from the returned time.var_pair
+KNZ_rankshift$year <- as.numeric(substr(KNZ_rankshift$year_pair, 6,9))
+
+# Create the graph
+rankshift.graph <- ggplot(KNZ_rankshift, aes(year, MRS)) + 
+  geom_line(size = 1) + 
+  facet_wrap(~replicate) +
+  theme_bw() 
+
+
+### Panel D: rate change ###
+
+# Run the rate change code
+comm.res <- rate_change_interval(collins08,   
+                                 time.var= "year",    
+                                 species.var= "species",  
+                                 abundance.var= "abundance", 
+                                 replicate.var = "replicate")
+
+# Create the graph
+rate.graph<-ggplot(comm.res, aes(interval, distance, group = replicate)) + 
+  geom_point() + 
+  facet_wrap(~replicate) + 
+  stat_smooth(method = "lm", se = F, size = 1) +
+  theme_bw() 
+
+### Put the panel graph together ###
+fig2 <- grid.arrange(rich.graph +
+                       labs(x="Year", y=expression(paste("Richness (no / 10", m^2,")"))) +
+                       theme(strip.text.x = element_text(size = 14),
+                             strip.background = element_blank()) +
+                       theme( plot.margin=unit(c(0,1,0,0), "cm")),
+                     
+                     turn.graph + 
+                       labs(x="Year", y="Turnover") +
+                       theme(legend.position="none") +
+                       theme(strip.background = element_blank(),
+                             strip.text.x = element_blank()) +
+                       scale_color_manual( values = cbbPalette) + 
+                       theme( plot.margin=unit(c(0,1,0,0), "cm")),
+                     
+                     rankshift.graph + 
+                       labs(x="Year", y="Mean rank shift") +
+                       theme(strip.background = element_blank(),
+                             strip.text.x = element_blank()) +
+                       theme( plot.margin=unit(c(0,1,0,0), "cm")), 
+                     
+                     rate.graph +  
+                       labs(x="Time interval", y="Euclidean distance") +
+                       theme(strip.background = element_blank(),
+                             strip.text.x = element_blank()) +
+                       theme( plot.margin=unit(c(0,1,0,0), "cm")), 
+                     
+                     ncol=1)
+
+
+            
 #make community matrices
         #subsets by malaise and pitfall
           dM <- d[d$Malaise.Pit=="M" , ]
@@ -125,6 +300,21 @@
                     sum(mTroph.sig$uni.p[2,]<=.05)
                     which(mTroph.sig$uni.p[2,]<=.05)
 
+#with abiotic covariates                    
+           #by trophic, abundance
+                    mTroph <- manyglm(as.matrix(abund.TxS) ~ clim$light.sun + clim$mean.T + clim$wind.max + clim$perc.clouds, family = "negative.binomial")
+                    mTroph.sig <- anova(mTroph, p.uni = "adjusted")
+                    summary(mTroph)
+                    
+                    #time of day is significant (.001) as a factor determining community composition
+                    #check residuals vs fitted
+                    plot.manyglm(mTroph)
+                    #check mean variance relationship
+                    meanvar.plot(abund.TxS[,] ~ as.factor(clim$dateTimeEnd$hour))
+                    
+                    mTroph.sig$uni.p
+                    
+                    
 #a function to animate each samnple in a NMDS plot
 ordination.animation <- function(comm.matrix, file.ext){
               
@@ -197,19 +387,37 @@ ordination.animation <- function(comm.matrix, file.ext){
           ordination.animation(comm.matrix = vol.FxS, file.ext = "Family volume")
           ordination.animation(comm.matrix = vol.FxS, file.ext = "Trophic volume")
 
+          #PERMANOVA for family abundance by abiotic variables
+    adonis(abund.FxS ~ clim$light.sun + clim$mean.T + clim$wind.max + clim$perc.clouds)
 
-#PERMANOVA for family abundance by time of day, second for abiotic variables
-    adonis(abund.FxS ~ as.factor(clim$dateTimeEnd$hour))
-    adonis(abund.FxS ~ clim$light.sun + clim$mean.T + clim$wind.max)
+#PERMANOVA for trophic abundance  by abiotic variables
+    adonis(abund.TxS ~ clim$light.sun + clim$mean.T + clim$wind.max + clim$perc.clouds)
+
+#PERMANOVA for family volume  by abiotic variables
+    adonis(vol.FxS ~ clim$light.sun + clim$mean.T + clim$wind.max + clim$perc.clouds)
     
-#PERMANOVA for trophic abundance by time of day, second for abiotic variables
-    adonis(abund.TxS ~ as.factor(clim$dateTimeEnd$hour))
-    adonis(abund.TxS ~ clim$light.sun + clim$mean.T + clim$wind.max)
-    
-    
-    
-    
-#plot average body length by order
+#PERMANOVA for trophic volume  by abiotic variables
+    adonis(vol.TxS ~ clim$light.sun + clim$mean.T + clim$wind.max + clim$perc.clouds)        
+
+    permTable <- function(matrix) {
+      modelResult <- adonis(matrix ~ as.factor(clim$dateTimeEnd$hour))
+      pValue <- modelResult$aov.tab["Pr(>F)"][1,]
+      R2value <- modelResult$aov.tab["R2"][1,]
+      Fstat <- modelResult$aov.tab$F.Model[1]
+      data.frame("pValue" = pValue ,"R2value" = R2value, "Fstat" = Fstat )
+    }
+    ?adonis
+
+PERMsummaries  <- as.data.frame(t( sapply(     list("individuals in families" = abund.FxS, 
+             "individuals in feeding strategy" = abund.TxS,
+             "volume in families" = vol.FxS, 
+             "volume in feeding strategies" = vol.TxS)
+                        , permTable)))
+
+PERMsummaries
+
+
+    #plot average body length by order
       #mean and se within orders
       lenOrd <- data.frame (mean = with(d, tapply(Length, Order, mean)),se= with(d, tapply(Length, Order, se)))
       lenOrd <- lenOrd[order(lenOrd$mean, decreasing=TRUE) , ]
@@ -222,197 +430,127 @@ ordination.animation <- function(comm.matrix, file.ext){
       p1
       
 #calculate mean and se of mean sizes, volumes, and sample sizes within each order and time block
-      summary.table <- with (d, aggregate(x = cbind(Length, volume),
+
+      
+      summary.table <- with (dExpand, aggregate(x = cbind(Length, volume),
                                   by = list(Order = Order, endTime = End.Time), 
                                   FUN= function(x) {c(mean = mean(x, na.rm = TRUE), se = se(x), n = length(x))}
                                   ))
+      summary.table[,"Length"][,"mean"][  is.nan(summary.table[,"Length"][,"mean"]) ] <- NA
 
 #reorder by order then by time
       summary.table <- summary.table[ order( summary.table[,"Order"] , summary.table[ , "endTime"] ) , ]
 
   #body length   
-        #open an empty d matrix of plots of BODY LENGTH
-            par(mfrow=c(5,4))
-          
-        #using a loop, fill in each of the 17 plots
+      #body volume
+      plots <- list()  
+      #using a loop, fill in each of the 17 plots
+      for(i in unique(d$Order) ) {
+        d.temp <- summary.table[summary.table$Order == i , ]
         
-        for(i in unique(d$Order) ) {
-              summT <- summary.table[summary.table$Order == i , ]
+        p1 <- ggplot(d.temp)+aes(x= endTime, y = Length[,"mean"]) +
+          geom_bar(stat = "identity") + 
+          ggtitle(i) + xlab("") + ylab("mean length (mm)")
+        plots[[i]] <- p1
         
-              predplot <- barplot(height = summT[,"Length"][,"mean"], names.arg= summT[,"endTime"], ylim = c(0,max(summT[,"Length"][,"mean"])),col="grey"
-                            , ylab="mean len (mm)" , xlab="collection end time (hours)" , main= i )
-              error.bar(predplot , summT[ , "Length"][ , "mean" ] , summT[ , "Length"][,"se"], length = .05)	
-        }
+      }
+      grid.arrange(grobs = plots)
+      head(summary.table)
   #body volume
-        #open an empty 4x4 matrix of plots of BODY VOLUME
-        par(mfrow=c(5,4))
-        
-        #using a loop, fill in each of the 17 plots
-        for(i in unique(d$Order) ) {
-          summT <- summary.table[summary.table$Order == i , ]
-          
-          predplot <- barplot(height = summT[,"volume"][,"mean"], names.arg= summT[,"endTime"], ylim = c(0 , max(summT[,"volume"][,"mean"])) , col="grey"
-                              , ylab = "mean vol (mm^3)" , xlab = "collection end time (hours)" , main = i )
-          error.bar(predplot , summT[ , "volume"][ , "mean" ] , summT[ , "volume"][,"se"], length = .05)	
-        }
-
+            plots <- list()  
+            #using a loop, fill in each of the 17 plots
+            for(i in unique(d$Order) ) {
+              d.temp <- summary.table[summary.table$Order == i , ]
+              
+              p1 <- ggplot(d.temp)+aes(x= endTime, y = volume[,"mean"]) +
+                geom_bar(stat = "identity") + 
+                ggtitle(i) + xlab("") + ylab("mean volume (mm^3)")
+              plots[[i]] <- p1
+              
+            }
+            grid.arrange(grobs = plots)
+            
   #abundance
-        #open an empty 4x4 matrix of plots of BODY VOLUME
-        par(mfrow=c(5,4))
-        
+         plots <- list()  
         #using a loop, fill in each of the 17 plots
         for(i in unique(d$Order) ) {
-          summT <- summary.table[summary.table$Order == i , ]
+          d.temp <- summary.table[summary.table$Order == i , ]
           
-          barplot(height = summT[,"Length"][,"n"], names.arg= summT[,"endTime"], ylim = c(0 , max(summT[,"Length"][,"n"])) , col="grey"
-                              , ylab = "n individuals" , xlab = "collection end time (hours)" , main = i )
+          p1 <- ggplot(d.temp)+aes(x= endTime, y = Length[,"n"]) +
+            geom_bar(stat = "identity") + 
+            ggtitle(i) + xlab("") + ylab("abundance")
+          plots[[i]] <- p1
+          
         }
-        
+         grid.arrange(grobs = plots)
+         
+#summarize by day, night, crepuscular    
+  day.night.summ <- with (dExpand, aggregate(x = cbind(Length, volume),
+                          by = list(Order = Order, comm.type = comm.type), 
+                          FUN= function(x) {c(mean = mean(x, na.rm = TRUE), se = se(x), n = length(x))}
+        ))
 
-
-#redo same graphs splitting by day, night, and crepuscular
-d$comm.type<-0
-d$comm.type<-ifelse(d$end.hour==10|d$end.hour==22,"crepuscular",d$comm.type)
-d$comm.type<-ifelse(d$end.hour==14|d$end.hour==18,"day",d$comm.type)
-d$comm.type<-ifelse(d$end.hour==2|d$end.hour==6,"night",d$comm.type)
-
-size<-aggregate(d$Length,list(d$comm.type,d$Order),mean)
-size.se<-aggregate(d$Length,list(d$comm.type,d$Order),se)
-vol<-aggregate(d$volume,list(d$comm.type,d$Order),mean)
-vol.se<-aggregate(d$volume,list(d$comm.type,d$Order),se)
-abund<-aggregate(d$Length,list(d$comm.type,d$Order),length)
-abund.se<-aggregate(d$Length,list(d$comm.type,d$Order),se)
-
-day.night.summ<-cbind(size,size.se[,3],abund[,3],abund.se[,3],vol[,3],vol.se[,3])
-
-##########For ENT SOC
-
-means.comm <- with(d , tapply(Length , comm.type, mean))
-ses.comm <- with(d , tapply(Length , comm.type, se))
-
-
-predplot <- barplot(means.comm ,col=c("grey80","white","grey20"),ylab="",xlab="", ylim=c(0,5.5), border=c(FALSE,TRUE,FALSE),cex.names=1.7,cex.axis=1.5)
-error.bar(predplot, means.comm, ses.comm, length=.2,lwd=1)	
-
-abund.comm <- with(d , tapply(Length , comm.type, length))
-
-
-predplot <- barplot(abund.comm ,col=c("grey80","white","grey20"),ylab="",xlab="", ylim=c(0,2000), border=c(FALSE,TRUE,FALSE),cex.names=1.7,cex.axis=1.5)
-error.bar(predplot, means.comm, ses.comm, length=.2,lwd=1)	
-
-
-#plot all the data
-
-length(unique(day.night.summ[,2]))
-ord.names<-unique(day.night.summ[,2])
-
-
+  
 #night and day BODY LENGTH, labeled with sample size on x axis
-par(mfrow=c(5,4))
 #using a loop, fill in each of the 17 plots
-for(i in 1: length(unique(day.night.summ[,2]))){
-	
-d.temp<-subset(day.night.summ,day.night.summ[,2]==ord.names[i])
-predplot <- barplot(height=d.temp[,3], names.arg= paste(d.temp[,1],"  ","(",d.temp[,5],")",sep=""),col=ifelse(d.temp[,1]=="day","white",ifelse(d.temp[,1]=="night","grey10","grey80")),ylab="mean length (mm)",ylim=c(0,(max(d.temp[,3])*1.5)),xlab="",xlim=c(0,4),main=ord.names[i])
-
-error.bar(predplot,d.temp[,3],d.temp[,4])	
-
-}
+      plots <- list()
+      for(i in unique(day.night.summ[,"Order"])){
+      	
+                    d.temp <- day.night.summ[ day.night.summ[ ,"Order" ]==i , ]
+                    p1 <- ggplot(d.temp)+aes(x= comm.type, y = Length[,"mean"]) +
+                      geom_bar(stat = "identity", fill = myColors[!is.na(d.temp[, "Length"][ , "mean"])]) + 
+                      ggtitle(i) + xlab("") + ylab("mean length (mm)")
+                    p1 <-  p1+ geom_errorbar(aes(ymin = Length[ , "mean"]-Length[ , "se"], ymax=Length[ , "mean"]+Length[ , "se"]), width = 0.2)
+                    plots[[i]] <- p1
+              }
+              grid.arrange(grobs = plots)
 
 
 #STATISTICS for day/night body length question
 
-#subset to only day and night
-d.dn<-subset(d,d$comm.type=="day"|d$comm.type=="night")
+      #subset to only day and night, subset orders occuring in both
+      d.dn<-subset(d,d$comm.type=="day"|d$comm.type=="night")
+      orders.for.analysis <- names( which( rowSums( table(d.dn$Order, d.dn$comm.type) > 0 ) == 2 ) )
 
-#tally number of days and nights each order is represented in. Drop singletons
-order.day.night<-aggregate(d.dn$Length,list(d.dn$Order,d.dn$comm.type),FUN=length)
-order.day.night <-subset(order.day.night, order.day.night[,3]>1)
-
-#subset to only orders in both time periods, list the orders that fit analysis criteria
-sum.occur<-tapply(X= order.day.night[,1],INDEX= order.day.night[,1],FUN=length)
-sum.occur<-subset(sum.occur,sum.occur==2)
-orders.for.analysis<-rownames(sum.occur)
-
-#function to pull out p-value from lm object
-lmp <- function (modelobject) {
-    if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
-    f <- summary(modelobject)$fstatistic
-    p <- pf(f[1],f[2],f[3],lower.tail=F)
-    attributes(p) <- NULL
-    return(p)
-}
-
-#loop to do the analysis for each order, print order, parameter estimate, and p-value
-for (i in 1:length(orders.for.analysis)){
-	
-	d.temp<-subset(d.dn, d.dn$Order==orders.for.analysis[i])
-	m.temp<-lm(d.temp$Length~d.temp$comm.type)
-	print(orders.for.analysis[i])
-	print(m.temp$coefficients)
-	print(c("p-value",lmp(m.temp)))
-	print("")
-	
-}
-
-#A first stab at trying to quantify the contribution of family ID vs order*day/night interactions to body length
-summary(lm(Length~Order*comm.type+Family,data=d.dn))
-summary(lm(Length~trophic.assign,data=d.dn))
+      #function to pull out p-value from lm object
+      lmp <- function (modelobject) {
+          if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+          f <- summary(modelobject)$fstatistic
+          p <- pf(f[1],f[2],f[3],lower.tail=F)
+          attributes(p) <- NULL
+          return(p)
+      }
+      
+      #loop to do the analysis for each order, print order, parameter estimate, and p-value
+        coef <- list()
+          for (i in orders.for.analysis){
+          	d.temp <- d.dn[d.dn$Order == i , ]
+          	m.temp <- lm(d.temp$Length ~ d.temp$comm.type)
+          	coef[[i]][["p.value"]] <-  lmp(m.temp)
+          	coef[[i]][["Intercept"]] <- m.temp$coefficients[1]
+          	coef[[i]][["comm.typenight"]] <- m.temp$coefficients[2]
+          }
 
 
-
-#night and day BODY VOLUME, labeled with sample size on x axis
-par(mfrow=c(5,4))
-#using a loop, fill in each of the 17 plots
-for(i in 1: length(unique(day.night.summ[,2]))){
-	
-d.temp<-subset(day.night.summ,day.night.summ[,2]==ord.names[i])
-predplot <- barplot(height=d.temp[,7], names.arg= paste(d.temp[,1],"  ","(",d.temp[,5],")",sep=""),col=ifelse(d.temp[,1]=="day","white",ifelse(d.temp[,1]=="night","grey10","grey80")),ylab="body volume (mm^3)",ylim=c(0,(max(d.temp[,7])*1.5)),xlab="",main=ord.names[i],xlim=c(0,4))
-error.bar(predplot,d.temp[,7],d.temp[,8])	
-		
-}
-
-
-
-
+        
 #plot Hyms and Dips seperately to look at how different families contribute to the total counts
-dH<-subset(d,d$Order=="Hymenoptera")
+        
+    #plot hymenopteran families by time
+    Hym.fam.count <- with (dH<-d[ d$Order=="Hymenoptera" , ] ,  
+                  aggregate(x = ord.fam, by = list(Family = Family,End.Time = End.Time), FUN = length ))
+    
+    ggplot(Hym.fam.count , aes(x=End.Time , y = x ,fill=Family)) + geom_bar(stat="identity") + labs(title="Hymenoptera abundance")+
+      theme(axis.text=element_text(size=14))+labs(fill="Family",x=("Time"),y=("Abundance"))+guides(fill=guide_legend(reverse=TRUE))
 
-dH.fam.count<-aggregate(dH$Length,list(dH$Family,dH$end.hour),length)
-ggplot(dH.fam.count,aes(x=dH.fam.count[,2],y=dH.fam.count[,3],fill=dH.fam.count[,1]))+geom_bar(stat="identity")+labs(title="Hymenoptera abundance")+ scale_x_discrete(breaks=c("2","6","10","14","18","22"), labels=c("2:00", "6:00", "10:00","14:00","18:00","22:00"))+theme(axis.text=element_text(size=14))+labs(fill="Family",x=("Time"),y=("Abundance"))+guides(fill=guide_legend(reverse=TRUE))
+    #plot hymenopteran families by time
+      Dip.fam.count <- with (dH<-d[ d$Order=="Diptera" , ] ,
+                  aggregate(x = ord.fam, by = list(Family = Family,End.Time = End.Time), FUN = length ))
+      
+      ggplot(Dip.fam.count , aes(x=End.Time , y = x ,fill=Family)) + geom_bar(stat="identity") + labs(title="Diptera abundance")+
+        theme(axis.text=element_text(size=14))+labs(fill="Family",x=("Time"),y=("Abundance"))+guides(fill=guide_legend(reverse=TRUE))
 
 
-dD<-subset(d,d$Order=="Diptera")
-
-dD.fam.count<-aggregate(dD$Length,list(dD$Family,dD$end.hour),length)
-
-ggplot(dD.fam.count,aes(x=dD.fam.count[,2],y=dD.fam.count[,3],fill=dD.fam.count[,1]))+geom_bar(stat="identity")+labs(title="Diptera abundance")+ scale_x_discrete(breaks=c("2","6","10","14","18","22"), labels=c("2:00", "6:00", "10:00","14:00","18:00","22:00"))+theme(axis.text=element_text(size=14))+labs(fill="Family",x=("Time"),y=("Abundance"))+guides(fill=guide_legend(reverse=TRUE))
-
-######################
-#when are more families active?
-######################
-
-#table of number of families per sampling time
-fam.count.time<-ddply(d, .(sample.time), summarize, NumFams = length(unique(ord.fam)))
-
-#pull out number for time of day
-fam.count.time$hours<-gsub("(.+).......+","\\1",fam.count.time$sample.time)
-fam.count.time<-as.data.frame(fam.count.time)
-
-#calculate mean number of families and se in each time window
-num.fams.mean<-tapply(fam.count.time$NumFams,as.factor(fam.count.time$hours),mean)
-num.fams.se<-tapply(fam.count.time$NumFams,as.factor(fam.count.time$hours),se)
-
-#stick hours back on as a column, order by time of day for plotting
-hours<-as.numeric(rownames(num.fams.mean))
-fam.count.summ<-cbind(hours,num.fams.mean, num.fams.se)
-fam.count.summ <-fam.count.summ[order(fam.count.summ[,1]),]
-
-#plot mean number of families in each timestep
-predplot <- barplot(height= fam.count.summ[,2], names.arg=c("10pm-2am","2am-6am","6am-10am","10am-2pm","2pm-6pm","6pm-10pm"),ylab="families per sampling interval",ylim=c(0,35),xlab="",xlim=c(0,7),main="family level diversity in time")
-
-error.bar(predplot, fam.count.summ[,2], fam.count.summ[,3])	
-
+        
 ######################
 
 dP<-subset(d,d$Malaise.Pit=="P")
@@ -475,21 +613,13 @@ massive.taxa<-ddply(fam.mass,.(vars),subset,x==max(x))
 
 ######################
 #family accumulation curve
-
-#accum<-matrix(0,nrow=length(d$ord.fam),ncol=10)
-#for(h in 1:10){
-#d.rand<-d[sample(nrow(d)),]
-#new.row<-1:length(d.rand$ord.fam)
-#d.rand<-cbind(d.rand,new.row)
-#for(i in 1:length(d.rand$ord.fam)){
-#	temp<-subset(d.rand,d.rand$new.row<i+1)
-#	accum[i,h]<-length(unique(temp$ord.fam))
-
-#}
-#}
-#accum.to.fit<-rowMeans(accum)
-#accum.to.fit<-cbind(1:length(accum.to.fit),accum.to.fit)
-#plot(accum.to.fit,xlab="Individuals collected",ylab="Family count",main="Family accumulation")
+setwd("figures")
+png(file = "family accumulation")
+plot(specaccum(abund.FxS), 
+    xlab = "", ylab = "",
+    main = "Family accumulation",cex = 2)
+graphics.off()
+setwd("..")
 
 ##########################
 #plot all data together, summing across the 5 days
@@ -594,13 +724,24 @@ colnames(for.tree) <- c("End.Time" , "Order" ,"Family",name.of.group)
 treemap(for.tree, index = c("End.Time","Family"),vSize=name.of.group,type="index", fontsize.labels=c(25,14),fontsize.title=25,bg.labels=0,overlap.labels=1,force.print=TRUE,ymod.labels=c(.05,0))
 }
 
-dev.new(width=10, height=14)
-
+setwd("figures")
+png(file = "parisitoid_map", res = 1000)
+?png
 tree.map.trophic("Parasitoid")
+dev.off()
 
+png(file = "detritivore_map", width = 1300, height = 1300, font = "Times")
 tree.map.trophic("Detritivore")
+dev.off()
 
-d[d$trophic.assign=="Detritivore",]
+png(file = "predator_map", width = 1300, height = 1300)
+tree.map.trophic("Predator")
+dev.off()
+
+png(file = "herbivore_map", width = 1300, height = 1300)
+tree.map.trophic("Herbivore")
+dev.off()
+
 
 for.tree<-with(d, aggregate(ord.fam, by=list(End.Time , trophic.assign , ord.fam), FUN=length))
 
